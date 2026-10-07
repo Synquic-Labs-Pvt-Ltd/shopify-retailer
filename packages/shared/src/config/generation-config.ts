@@ -6,6 +6,7 @@ import {
   PERSON_GENERATION_MODES,
   STORAGE_PROVIDERS,
   VIDEO_ASPECT_RATIOS,
+  VIDEO_MODES,
   VIDEO_RESOLUTIONS,
 } from '../enums';
 
@@ -59,15 +60,27 @@ export const aiConfigSchema = z.strictObject({
   }),
 });
 
-export const videoConfigSchema = z.strictObject({
-  // Reference-image mode requires exactly 8 seconds.
-  durationSeconds: z.literal(8),
-  aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),
-  resolution: z.enum(VIDEO_RESOLUTIONS),
-  generateAudio: z.boolean(),
-  personGeneration: z.enum(PERSON_GENERATION_MODES),
-  negativePrompt: z.string(),
-});
+export const videoConfigSchema = z
+  .strictObject({
+    // reference_images (default): product images go in as Veo reference assets. image_to_video: the first
+    // product image is the first frame. Switchable live; batches snapshot the value at creation.
+    mode: z.enum(VIDEO_MODES).default('reference_images'),
+    // Reference-image mode requires exactly 8 seconds. Image-to-video allows 4, 6 or 8.
+    durationSeconds: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+    aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),
+    resolution: z.enum(VIDEO_RESOLUTIONS),
+    generateAudio: z.boolean(),
+    personGeneration: z.enum(PERSON_GENERATION_MODES),
+    negativePrompt: z.string(),
+  })
+  .superRefine((video, ctx) => {
+    if (video.mode === 'reference_images' && video.durationSeconds !== 8) {
+      ctx.addIssue({ code: 'custom', message: 'durationSeconds must be 8 in reference_images mode', path: ['durationSeconds'] });
+    }
+    if (video.resolution === '1080p' && video.durationSeconds !== 8) {
+      ctx.addIssue({ code: 'custom', message: '1080p supports only durationSeconds 8', path: ['durationSeconds'] });
+    }
+  });
 
 export const referencesConfigSchema = z.strictObject({
   maxPerProduct: nonNegativeInt,
@@ -195,6 +208,7 @@ export const defaultGenerationConfig: GenerationConfig = {
     planner: { maxReferenceImages: 6, maxReferenceVideos: 2, temperature: 0.6 },
   },
   video: {
+    mode: 'reference_images',
     durationSeconds: 8,
     aspectRatio: '9:16',
     resolution: '720p',
