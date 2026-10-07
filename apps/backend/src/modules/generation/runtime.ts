@@ -75,10 +75,10 @@ export function planCounts(frozen: BatchConfigSnapshot): PlanCounts {
 
 // Marks the batch as started and returns null when the job must not run: the batch was cancelled or its
 // data is gone.
-export async function beginJob(rt: Runtime, job: QueueJob): Promise<JobRun | null> {
+export async function beginJob(rt: Runtime, job: QueueJob, options: { references?: boolean } = {}): Promise<JobRun | null> {
   let ctx: BatchItemContext;
   try {
-    ctx = await rt.batches.getItemContext(job.shopId, job.batchItemId);
+    ctx = await rt.batches.getItemContext(job.shopId, job.batchItemId, options);
   } catch (err) {
     if (err instanceof AppError && err.code === 'not_found') return null;
     throw err;

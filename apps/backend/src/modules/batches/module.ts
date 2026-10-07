@@ -10,6 +10,21 @@ import { createBatchesRouter } from './routes';
 
 const ACTIVE_STATUSES = ['queued', 'running'] as const;
 
+// The queue swallows a failing listener, so a transient database error is retried here instead of leaving
+// the counters stale until the next job of the batch finishes (getBatch also repairs them on read).
+const RETRY_DELAYS_MS = [200, 1000, 3000];
+
+async function withRetry(work: () => Promise<void>): Promise<void> {
+  for (const delay of RETRY_DELAYS_MS) {
+    try {
+      return await work();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return work();
+}
+
 // Wire after the queue module, then:
 //   container.onJobTerminal(batches.service.reportJobFinished)
 //   generation = createGenerationModule({ batches: batches.service, ... })
@@ -18,7 +33,7 @@ export function createBatchesModule(deps: BatchesModuleDeps): BatchesModule {
   const now = deps.now ?? (() => new Date());
   const recount = createAggregator({ store: deps.queue.store, now });
   const items = createItemService({ media: deps.media, now });
-  const queries = createQueries(deps);
+  const queries = createQueries({ ...deps, recount });
   const control = createControl({ queue: deps.queue, shops: deps.shops, logger: deps.logger, now, recount });
   const creator = createBatchCreator({ ...deps, now });
 
@@ -50,7 +65,7 @@ export function createBatchesModule(deps: BatchesModuleDeps): BatchesModule {
     markBatchStarted: items.markBatchStarted,
     markItemPlanning: items.markItemPlanning,
     setCreativePlan: items.setCreativePlan,
-    reportJobFinished: (job) => recount(job.shopId, job.batchId),
+    reportJobFinished: (job) => withRetry(() => recount(job.shopId, job.batchId)),
     async purgeShop(shopId) {
       const shop = new Types.ObjectId(shopId);
       await Promise.all([BatchItemModel.deleteMany({ shopId: shop }), BatchModel.deleteMany({ shopId: shop })]);

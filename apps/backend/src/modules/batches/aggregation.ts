@@ -4,7 +4,10 @@ import type { JobStore, QueueJob } from '../queue';
 import { BatchItemModel, BatchModel, type BatchDoc, type BatchItemDoc } from './models';
 import { deriveBatch, deriveItem, type ItemDerivation, type JobFact } from './status';
 
-type ItemRow = Pick<BatchItemDoc, '_id' | 'status' | 'planSource' | 'counts' | 'outputMediaIds' | 'finishedAt'>;
+export type BatchRow = Pick<BatchDoc, '_id' | 'status' | 'counts' | 'finishedAt'>;
+export type ItemRow = Pick<BatchItemDoc, '_id' | 'status' | 'planSource' | 'counts' | 'outputMediaIds' | 'finishedAt'>;
+
+export const ITEM_PROJECTION = { status: 1, planSource: 1, counts: 1, outputMediaIds: 1, finishedAt: 1 } as const;
 
 const sameIds = (a: readonly Types.ObjectId[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((id, index) => id.toHexString() === b[index]);
@@ -25,6 +28,75 @@ function itemChanged(item: ItemRow, derived: ItemDerivation): boolean {
   );
 }
 
+export interface ItemUpdate {
+  id: Types.ObjectId;
+  set: Record<string, unknown>;
+  terminal: boolean;
+  finishedAt: Date | null | undefined;
+}
+
+export interface RecountPlan {
+  items: ItemUpdate[];
+  batch: { set: Record<string, unknown>; terminal: boolean; finishedAt: Date | null | undefined };
+  changed: boolean;
+}
+
+// What the stored counters and statuses should be, given the jobs. Pure: nothing is written here.
+export function planRecount(batch: BatchRow, items: readonly ItemRow[], jobs: readonly QueueJob[]): RecountPlan {
+  const factsByItem = new Map<string, JobFact[]>();
+  for (const job of jobs) {
+    const facts = factsByItem.get(job.batchItemId) ?? [];
+    facts.push(toFact(job));
+    factsByItem.set(job.batchItemId, facts);
+  }
+
+  const updates: ItemUpdate[] = [];
+  const itemStatuses: ItemStatus[] = [];
+  for (const item of items) {
+    const state = { status: item.status, planned: item.planSource != null, expectedJobs: item.counts.jobsTotal };
+    const derived = deriveItem(factsByItem.get(item._id.toHexString()) ?? [], state);
+    itemStatuses.push(derived.status ?? item.status);
+    if (!itemChanged(item, derived)) continue;
+    updates.push({
+      id: item._id,
+      terminal: derived.terminal,
+      finishedAt: item.finishedAt,
+      set: {
+        'counts.succeeded': derived.counts.succeeded,
+        'counts.failed': derived.counts.failed,
+        'counts.cancelled': derived.counts.cancelled,
+        outputMediaIds: derived.outputMediaIds.map((id) => new Types.ObjectId(id)),
+        ...(derived.status === null ? {} : { status: derived.status }),
+      },
+    });
+  }
+
+  const derived = deriveBatch(jobs.map(toFact), itemStatuses, { status: batch.status, expectedJobs: batch.counts.jobsTotal });
+  const set: Record<string, unknown> = {
+    'counts.jobsSucceeded': derived.counts.jobsSucceeded,
+    'counts.jobsFailed': derived.counts.jobsFailed,
+    'counts.jobsCancelled': derived.counts.jobsCancelled,
+    'counts.imagesReady': derived.counts.imagesReady,
+    'counts.videosReady': derived.counts.videosReady,
+    ...(derived.status === null ? {} : { status: derived.status }),
+  };
+  const { counts } = batch;
+  const batchChanged =
+    counts.jobsSucceeded !== derived.counts.jobsSucceeded ||
+    counts.jobsFailed !== derived.counts.jobsFailed ||
+    counts.jobsCancelled !== derived.counts.jobsCancelled ||
+    counts.imagesReady !== derived.counts.imagesReady ||
+    counts.videosReady !== derived.counts.videosReady ||
+    (derived.status !== null && derived.status !== batch.status) ||
+    derived.terminal !== (batch.finishedAt != null);
+
+  return {
+    items: updates,
+    batch: { set, terminal: derived.terminal, finishedAt: batch.finishedAt },
+    changed: batchChanged || updates.length > 0,
+  };
+}
+
 // Counters and statuses are recomputed from the jobs, never incremented, so a job reported twice counts
 // once and a lost report is repaired by the next one (SPEC 10.5). Concurrent recounts are ordered by a
 // ticket: every write is stamped with its ticket and only lands when no newer recount has written, so an
@@ -42,52 +114,22 @@ export function createAggregator(deps: { store: JobStore; now: () => Date }) {
 
     const [jobs, items] = await Promise.all([
       deps.store.listByBatch(shopId, batchId),
-      BatchItemModel.find({ batchId: claimed._id })
-        .sort({ _id: 1 })
-        .select({ status: 1, planSource: 1, counts: 1, outputMediaIds: 1, finishedAt: 1 })
-        .lean<ItemRow[]>(),
+      BatchItemModel.find({ batchId: claimed._id }).sort({ _id: 1 }).select(ITEM_PROJECTION).lean<ItemRow[]>(),
     ]);
-    const factsByItem = new Map<string, JobFact[]>();
-    for (const job of jobs) {
-      const facts = factsByItem.get(job.batchItemId) ?? [];
-      facts.push(toFact(job));
-      factsByItem.set(job.batchItemId, facts);
-    }
-
+    const plan = planRecount(claimed, items, jobs);
     const now = deps.now();
-    const itemStatuses: ItemStatus[] = [];
-    for (const item of items) {
-      const state = { status: item.status, planned: item.planSource != null, expectedJobs: item.counts.jobsTotal };
-      const derived = deriveItem(factsByItem.get(item._id.toHexString()) ?? [], state);
-      itemStatuses.push(derived.status ?? item.status);
-      if (!itemChanged(item, derived)) continue;
-      const set: Record<string, unknown> = {
-        'counts.succeeded': derived.counts.succeeded,
-        'counts.failed': derived.counts.failed,
-        'counts.cancelled': derived.counts.cancelled,
-        outputMediaIds: derived.outputMediaIds.map((id) => new Types.ObjectId(id)),
-        statsApplied: ticket,
-        ...(derived.status === null ? {} : { status: derived.status }),
-      };
+
+    for (const item of plan.items) {
+      const set = { ...item.set, statsApplied: ticket };
       await BatchItemModel.updateOne(
-        { _id: item._id, statsApplied: { $lt: ticket } },
-        derived.terminal ? { $set: { ...set, finishedAt: item.finishedAt ?? now } } : { $set: set, $unset: { finishedAt: 1 } },
+        { _id: item.id, statsApplied: { $lt: ticket } },
+        item.terminal ? { $set: { ...set, finishedAt: item.finishedAt ?? now } } : { $set: set, $unset: { finishedAt: 1 } },
       );
     }
-
-    const batch = deriveBatch(jobs.map(toFact), itemStatuses, { status: claimed.status, expectedJobs: claimed.counts.jobsTotal });
-    const set: Record<string, unknown> = {
-      'counts.jobsSucceeded': batch.counts.jobsSucceeded,
-      'counts.jobsFailed': batch.counts.jobsFailed,
-      'counts.jobsCancelled': batch.counts.jobsCancelled,
-      'counts.imagesReady': batch.counts.imagesReady,
-      'counts.videosReady': batch.counts.videosReady,
-      statsApplied: ticket,
-      ...(batch.status === null ? {} : { status: batch.status }),
-    };
+    const set = { ...plan.batch.set, statsApplied: ticket };
     await BatchModel.updateOne(
       { _id: claimed._id, statsApplied: { $lt: ticket } },
-      batch.terminal ? { $set: { ...set, finishedAt: claimed.finishedAt ?? now } } : { $set: set, $unset: { finishedAt: 1 } },
+      plan.batch.terminal ? { $set: { ...set, finishedAt: plan.batch.finishedAt ?? now } } : { $set: set, $unset: { finishedAt: 1 } },
     );
   };
 }

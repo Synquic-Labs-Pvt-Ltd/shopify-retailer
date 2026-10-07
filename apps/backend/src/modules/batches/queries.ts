@@ -11,11 +11,12 @@ import {
 } from '@rs/shared';
 import { AppError } from '../../core/errors';
 import type { QueueJob } from '../queue';
+import { planRecount, type Recount } from './aggregation';
 import type { BatchesModuleDeps } from './index';
 import { toSummary } from './mapper';
 import { BatchItemModel, BatchModel, type BatchDoc, type BatchItemDoc } from './models';
 
-type QueryDeps = Pick<BatchesModuleDeps, 'getConfig' | 'queue' | 'governor' | 'media'>;
+type QueryDeps = Pick<BatchesModuleDeps, 'getConfig' | 'queue' | 'governor' | 'media'> & { recount: Recount };
 
 const TERMINAL_JOB_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -49,7 +50,7 @@ function byDisplayOrder(a: QueueJob, b: QueueJob): number {
 }
 
 export function createQueries(deps: QueryDeps) {
-  const { queue, governor, media } = deps;
+  const { queue, governor, media, recount } = deps;
 
   async function listBatches(shopId: string, query: BatchListQuery): Promise<BatchListResponse> {
     const filter: Record<string, unknown> = { shopId: new Types.ObjectId(shopId) };
@@ -90,12 +91,23 @@ export function createQueries(deps: QueryDeps) {
     return earliest === undefined ? null : { reason: earliest.reason, resumesAt: earliest.pausedUntil.toISOString() };
   }
 
-  async function getBatch(shopId: string, batchId: string): Promise<BatchDetail> {
+  async function load(shopId: string, batchId: string) {
     const batch = await findBatch(shopId, batchId);
     const [items, jobs] = await Promise.all([
       BatchItemModel.find({ batchId: batch._id }).sort({ _id: 1 }).lean<BatchItemDoc[]>(),
       queue.store.listByBatch(shopId, batchId),
     ]);
+    return { batch, items, jobs };
+  }
+
+  async function getBatch(shopId: string, batchId: string): Promise<BatchDetail> {
+    let loaded = await load(shopId, batchId);
+    // Counters that disagree with the jobs mean a completion report was lost: repair them before answering.
+    if (planRecount(loaded.batch, loaded.items, loaded.jobs).changed) {
+      await recount(shopId, batchId);
+      loaded = await load(shopId, batchId);
+    }
+    const { batch, items, jobs } = loaded;
 
     const outputIds = [...new Set(items.flatMap((item) => item.outputMediaIds.map((id) => id.toHexString())))];
     const objects = outputIds.length === 0 ? [] : await media.getObjects(shopId, outputIds);

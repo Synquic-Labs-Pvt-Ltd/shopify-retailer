@@ -29,7 +29,7 @@ function isTransportError(error: ClassifiedError): boolean {
 }
 
 async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise<JobOutcome> {
-  const run = await beginJob(rt, job);
+  const run = await beginJob(rt, job, { references: false });
   if (run === null) return CANCELLED;
   const { ctx } = run;
   const outputIndex = job.outputIndex ?? 0;
@@ -79,7 +79,7 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
 
 async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise<JobOutcome> {
   // A cancelled batch drops the operation without storing its result.
-  const run = await beginJob(rt, job);
+  const run = await beginJob(rt, job, { references: false });
   if (run === null) return CANCELLED;
   const { ctx } = run;
   if (job.operation === null) {
@@ -96,6 +96,8 @@ async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promi
   if (!polled.ok) return isTransportError(polled.error) ? awaiting(rt, operationName) : outcomeFromAiError(polled.error);
   if (!polled.value.done) return awaiting(rt, operationName);
 
+  // The operation finished, but the batch may have been cancelled meanwhile: do not store the result.
+  if ((await beginJob(rt, job, { references: false })) === null) return CANCELLED;
   const plan = await ensurePlan(rt, run);
   const shot = plan.videoShots[job.outputIndex ?? 0];
   const stored = await persistOutput(rt, {

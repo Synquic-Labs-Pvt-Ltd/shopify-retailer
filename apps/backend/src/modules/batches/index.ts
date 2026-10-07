@@ -64,8 +64,9 @@ export interface BatchesService {
   cancelAllForShop(shopId: string): Promise<number>;
   // True when a non-terminal batch uses the media as a common or effective reference (DELETE /media guard).
   isMediaInUse(shopId: string, mediaId: string): Promise<boolean>;
-  // Handler support. Throws AppError not_found for an unknown item.
-  getItemContext(shopId: string, itemId: string): Promise<BatchItemContext>;
+  // Handler support. Throws AppError not_found for an unknown item. references: false skips loading the
+  // reference assets (they stay empty) for handlers that do not use them.
+  getItemContext(shopId: string, itemId: string, options?: { references?: boolean }): Promise<BatchItemContext>;
   markBatchStarted(shopId: string, batchId: string): Promise<void>;
   markItemPlanning(shopId: string, itemId: string): Promise<void>;
   // First write wins. Returns the plan that is stored afterwards.

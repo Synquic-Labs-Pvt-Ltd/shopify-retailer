@@ -51,7 +51,7 @@ export function createBatchCreator(deps: CreateDeps) {
 
   // Enqueues the plan job and the output jobs that wait for it. No transactions on standalone Mongo, so
   // the caller cleans up when this throws part-way.
-  async function enqueueItemJobs(item: BatchItemDoc, config: BatchConfigSnapshot): Promise<number> {
+  async function enqueueItemJobs(item: BatchItemDoc, config: BatchConfigSnapshot): Promise<void> {
     const base = { shopId: item.shopId.toHexString(), batchId: item.batchId.toHexString(), batchItemId: item._id.toHexString() };
     const plan = await queue.store.enqueue({ ...base, type: 'plan', lane: laneKey(config.provider, config.models.planner) });
     const imageLane = laneKey(config.provider, config.models.image);
@@ -60,17 +60,19 @@ export function createBatchCreator(deps: CreateDeps) {
       ...Array.from({ length: config.outputs.imagesPerProduct }, (_unused, outputIndex) => ({ type: 'image' as const, lane: imageLane, outputIndex })),
       ...Array.from({ length: config.outputs.videosPerProduct }, (_unused, outputIndex) => ({ type: 'video' as const, lane: videoLane, outputIndex })),
     ];
-    await Promise.all(dependents.map((job) => queue.store.enqueue({ ...base, ...job, dependsOn: [plan.id] })));
-    return 1 + dependents.length;
+    // allSettled: a failure must not leave sibling inserts running while the caller cleans up.
+    const results = await Promise.allSettled(dependents.map((job) => queue.store.enqueue({ ...base, ...job, dependsOn: [plan.id] })));
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
   }
 
   // Never leaves orphans silently: whatever was enqueued is cancelled and the batch is marked failed.
-  async function abandon(batch: BatchDoc, created: number, cause: unknown): Promise<never> {
+  async function abandon(batch: BatchDoc, cause: unknown): Promise<never> {
     const shopId = batch.shopId.toHexString();
     const at = now();
     logger.error({ err: cause, batchId: batch._id.toHexString() }, 'batch creation failed part-way, cancelling its jobs');
     try {
       await queue.store.cancelByBatch(shopId, batch._id.toHexString());
+      const created = (await queue.store.listByBatch(shopId, batch._id.toHexString())).length;
       await BatchModel.updateOne(
         { _id: batch._id },
         { $set: { status: 'failed', cancelRequestedAt: at, finishedAt: at, 'counts.jobsTotal': created } },
@@ -132,13 +134,12 @@ export function createBatchCreator(deps: CreateDeps) {
       throw err;
     }
 
-    let enqueued = 0;
     try {
       const items = resolved.products.map((product) => toItemDoc(batch, product, snapshots, snapshot, at));
       await BatchItemModel.insertMany(items);
-      for (const item of items) enqueued += await enqueueItemJobs(item, snapshot);
+      for (const item of items) await enqueueItemJobs(item, snapshot);
     } catch (err) {
-      return abandon(batch, enqueued, err);
+      return abandon(batch, err);
     }
     logger.info({ batchId: batch._id.toHexString(), shopId: actor.shopId, products: resolved.products.length, jobs: jobsTotal }, 'batch created');
     return toSummary(batch);

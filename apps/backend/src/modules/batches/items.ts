@@ -14,7 +14,7 @@ export function createItemService(deps: ItemDeps) {
 
   const notFound = (): AppError => AppError.notFound('Batch item not found');
 
-  async function getItemContext(shopId: string, itemId: string): Promise<BatchItemContext> {
+  async function getItemContext(shopId: string, itemId: string, options: { references?: boolean } = {}): Promise<BatchItemContext> {
     if (!isObjectId(itemId)) throw notFound();
     const item = await BatchItemModel.findOne({ _id: new Types.ObjectId(itemId), shopId: new Types.ObjectId(shopId) }).lean<BatchItemDoc>();
     if (item === null) throw notFound();
@@ -22,7 +22,7 @@ export function createItemService(deps: ItemDeps) {
     if (batch === null) throw notFound();
 
     const effective = item.effectiveReferenceMediaIds.map((id) => id.toHexString());
-    const assets = effective.length === 0 ? [] : await media.getAssets(shopId, effective);
+    const assets = effective.length === 0 || options.references === false ? [] : await media.getAssets(shopId, effective);
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
     const references = effective.flatMap((id) => {
       const asset = byId.get(id);
