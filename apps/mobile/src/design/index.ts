@@ -25,3 +25,4 @@ export * from './Skeleton';
 export * from './Progress';
 export * from './StatusTicker';
 export * from './FloatingTabBar';
+export * from './StickyFooter';

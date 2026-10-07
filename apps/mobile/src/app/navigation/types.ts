@@ -17,6 +17,8 @@ export type MainStackParamList = {
   BatchDetail: { batchId: string };
   ItemResults: { batchId: string; itemId: string };
   MediaViewer: { batchId: string; itemId: string; initialMediaId: string };
+  // Registered in development builds only (__DEV__).
+  DesignGallery: undefined;
 };
 
 declare global {
