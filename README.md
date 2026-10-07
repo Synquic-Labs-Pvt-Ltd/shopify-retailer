@@ -65,12 +65,38 @@ pnpm -F @rs/mobile dev         # expo start --dev-client (after a dev build is i
 pnpm -F @rs/mobile android     # expo run:android (generates android/, needs the Android SDK)
 ```
 
-With `EXPO_PUBLIC_API_MOCK=true` the app serves in-memory fixtures (`src/api/mock.ts`) and needs no backend. The Login placeholder then shows a "Continue with mock session" button. For the real backend set `EXPO_PUBLIC_API_BASE_URL` (Android emulator: `http://10.0.2.2:3000`).
+With `EXPO_PUBLIC_API_MOCK=true` the app serves in-memory fixtures (`src/api/mock/`) and needs no backend: log in with the prefilled `mock-store` domain and the whole create-batch flow works. For the real backend set `EXPO_PUBLIC_API_MOCK=false` and `EXPO_PUBLIC_API_BASE_URL` (Android emulator: `http://10.0.2.2:3000`; a physical device needs the public tunnel URL or your LAN IP). Both values are inlined into the JS bundle at build time.
+
+## Real end-to-end run (SPEC 22, Phase 3)
+
+What you need first:
+
+- A Shopify Partner app (Dev Dashboard, public app, unlisted distribution) with its client ID and secret, and a dev store with a few products that have images.
+- A Google Cloud project with the Vertex AI API enabled, billing on, and a service account with the Vertex AI User role. Download its key JSON and keep it under `apps/backend/secrets/` (git-ignored).
+- A MongoDB database (Atlas free tier, or a local `mongod`).
+- A public HTTPS URL that reaches your backend, for example a Cloudflare tunnel (`cloudflared tunnel --url http://localhost:3000`).
+
+Steps:
+
+1. Fill `apps/backend/.env` from `.env.example`: `PUBLIC_BASE_URL` (the tunnel URL), `MONGODB_URI`, `JWT_SECRET`, `TOKEN_ENC_KEY` (`openssl rand -hex 32` for each), `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `GOOGLE_APPLICATION_CREDENTIALS`, and `GOOGLE_CLOUD_PROJECT` if you do not want it read from the key.
+2. Check the AI provider before anything else. This makes a few cheap text and image calls, prints the raw error body on failure, and never submits a video unless you add `--video-submit`:
+
+   ```sh
+   pnpm -F @rs/backend smoke -- --only planner,image --video-probe
+   ```
+
+   Fix `models` and `locations` in `apps/backend/config/generation.config.json` until it passes. If Veo rejects 9:16 reference images, set `video.mode` to `image_to_video` or `video.aspectRatio` to `16:9`. Both reload without a restart.
+3. Put the tunnel URL and your client ID into `apps/backend/shopify/shopify.app.toml` and deploy the app config with the Shopify CLI (run the CLI from a clean machine or CI). The scopes must match `SHOPIFY_SCOPES`.
+4. Start the backend: `pnpm -F @rs/backend dev`. `curl <tunnel>/health` should answer with `db: connected`.
+5. Install the app on the dev store from its install link. Shopify opens the app URL, which shows an "installed" page.
+6. Build the mobile app with `EXPO_PUBLIC_API_MOCK=false` and `EXPO_PUBLIC_API_BASE_URL` set to the tunnel URL, install it, log in with the store domain, then run the checklist in SPEC 22 Phase 3 (bulk-select products, add per-product and common references, generate, watch the queue, download, cancel, change a lane's `rpm` live, uninstall).
+
+Money: each product costs two image calls, one planner call and one Veo video. Start with one or two products. Provider quota lives in `lanes` in the generation config; keep it at or below the quota shown in the Google Cloud console.
 
 ## Checks
 
 ```sh
 pnpm typecheck    # tsc --noEmit in every package, via turbo
-pnpm test         # vitest in @rs/shared and @rs/backend
+pnpm test         # vitest in @rs/shared and @rs/backend (the backend suite includes the end-to-end tests in apps/backend/test/e2e)
 pnpm lint         # strict type check plus unused locals and parameters
 ```
