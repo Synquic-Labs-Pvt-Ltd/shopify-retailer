@@ -1,6 +1,7 @@
 import type { ConfigService } from './core/config';
 import type { Env } from './core/env';
 import type { Logger } from './core/logger';
+import { createAiModule, type AiService } from './modules/ai';
 import { createAuthModule, type AuthModule } from './modules/auth';
 import type { QueueJob, QueueModule } from './modules/queue';
 import { createQueueModule } from './modules/queue/module';
@@ -19,6 +20,7 @@ export interface Container {
   shopify: ShopifyModule;
   rateLimit: RateLimitService;
   queue: QueueModule;
+  ai: AiService;
   // Modules that react to job completion (batches) subscribe here. The queue runner calls every
   // listener after a job reaches succeeded, failed or cancelled. A listener's error is logged, not thrown.
   onJobTerminal(listener: JobTerminalListener): void;
@@ -38,6 +40,7 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
   const shopify = createShopifyModule({ env, logger, shops, auth: auth.service });
 
   const rateLimit = createRateLimitModule({ getConfig, logger });
+  const ai = createAiModule({ env, logger, getConfig });
 
   const terminalListeners: JobTerminalListener[] = [];
   const queue = createQueueModule({
@@ -69,6 +72,7 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     shopify,
     rateLimit,
     queue,
+    ai,
     onJobTerminal(listener) {
       terminalListeners.push(listener);
     },
