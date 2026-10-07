@@ -1,4 +1,6 @@
+import type { RequestHandler, Router } from 'express';
 import type {
+  GenerationConfig,
   MediaObject,
   MediaRole,
   MediaScope,
@@ -8,6 +10,8 @@ import type {
   UploadFileRequest,
   UploadTarget,
 } from '@rs/shared';
+import type { Logger } from '../../core/logger';
+import type { ShopifyAdminClient } from '../shopify';
 
 export interface MediaActor {
   shopId: string;
@@ -59,6 +63,7 @@ export interface StorageDriver {
   completeUpload(actor: MediaActor, mediaId: string): Promise<MediaObject>;
   // Lazy status refresh for assets still processing (at most once every 3 seconds per asset).
   refreshStatus(shopId: string, mediaIds: string[]): Promise<MediaObject[]>;
+  // Rejects with StorageUploadError (code shopify_upload_failed, retryable flag) when the output cannot be stored.
   persistOutput(input: PersistOutputInput): Promise<MediaObject>;
   delete(shopId: string, mediaId: string): Promise<void>;
 }
@@ -69,4 +74,31 @@ export interface MediaService {
   getAssets(shopId: string, mediaIds: string[]): Promise<MediaAssetRecord[]>;
   getObjects(shopId: string, mediaIds: string[], options?: { refresh?: boolean }): Promise<MediaObject[]>;
   purgeShop(shopId: string): Promise<void>;
+  // DELETE /media/:id. References only. Throws not_found, forbidden (an output) or in_use (409).
+  deleteReference(shopId: string, mediaId: string): Promise<void>;
 }
+
+export interface MediaModuleOptions {
+  admin: ShopifyAdminClient;
+  // Verifies the bearer JWT and sets req.auth (auth module).
+  requireAuth: RequestHandler;
+  getConfig: () => GenerationConfig;
+  logger: Logger;
+  // True while a non-terminal batch uses the asset. Supplied by the batches module; defaults to false.
+  isMediaInUse?: (shopId: string, mediaId: string) => Promise<boolean>;
+  // Test seams. fetchImpl does the server side POST to the staged target.
+  fetchImpl?: typeof fetch;
+  now?: () => Date;
+  // Waits between fileStatus polls in persistOutput. Defaults to setTimeout.
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface MediaModule {
+  service: MediaService;
+  // Paths relative to /api/v1: POST /media/uploads, POST /media/:id/complete, GET /media, DELETE /media/:id.
+  router: Router;
+  ensureIndexes(): Promise<void>;
+}
+
+export { StorageUploadError } from './errors';
+export { createMediaModule } from './module';
