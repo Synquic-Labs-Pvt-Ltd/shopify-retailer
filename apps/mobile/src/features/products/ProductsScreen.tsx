@@ -190,7 +190,11 @@ export function ProductsScreen() {
           <StickyFooter followKeyboard={false}>
             <View style={styles.footerRow}>
               <AppText variant="meta" color={colors.meta}>{`${selection.length} selected`}</AppText>
-              <PrimaryButton label="Continue" style={styles.continue} onPress={() => navigation.navigate('References')} />
+              <PrimaryButton
+                label="Continue"
+                style={styles.continue}
+                onPress={() => navigation.navigate('References')}
+              />
             </View>
           </StickyFooter>
         </View>

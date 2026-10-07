@@ -1,6 +1,6 @@
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import type { BatchSummary } from '@rs/shared';
 import { useBatches } from '../../api/batches';
@@ -26,6 +26,16 @@ export function QueueScreen() {
   const focused = useIsFocused();
   const query = useBatches(focused);
   const { refreshing, onRefresh } = useManualRefresh(query.refetch);
+
+  // Coming back to the tab (for example from BatchDetail) shows fresh progress at once, not after the next poll.
+  const { refetch } = query;
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) firstFocus.current = false;
+      else void refetch();
+    }, [refetch]),
+  );
   const items = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
 
   const open = useCallback(

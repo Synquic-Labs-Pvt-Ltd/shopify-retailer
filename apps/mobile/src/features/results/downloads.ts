@@ -1,6 +1,7 @@
 import { File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import type { MediaObject } from '@rs/shared';
 
 // SPEC 16.3: download the CDN url to the cache, then save it to the gallery or hand it to the share sheet.
@@ -55,10 +56,13 @@ export async function downloadToCache(media: MediaObject): Promise<File> {
   }
 }
 
-// Write-only access is enough to add files; the system asks the first time.
+// Write-only access is enough to add files; the system asks the first time. Android 10 and newer let an app
+// add its own files to the shared collections without any permission, so a "not granted" answer is not final there.
 export async function ensureGalleryPermission(): Promise<void> {
   if ((await MediaLibrary.getPermissionsAsync(true)).granted) return;
-  if (!(await MediaLibrary.requestPermissionsAsync(true)).granted) throw new GalleryPermissionError();
+  if ((await MediaLibrary.requestPermissionsAsync(true)).granted) return;
+  if (Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 29) return;
+  throw new GalleryPermissionError();
 }
 
 export async function saveToGallery(media: MediaObject): Promise<void> {

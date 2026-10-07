@@ -20,7 +20,7 @@ import { IMAGES_PER_PRODUCT, SAMPLE_VIDEO_URL, VIDEOS_PER_PRODUCT, objectId, pic
 //   +1.5 s       each plan ends; its two image jobs and the video job start
 //   +2.0 / +3.5 s  the two images finish and appear one by one
 //   +7.5 s       the video finishes. The video of one product (the second, or the only one) FAILS
-//   t0 + 5.0 to 8.5 s  the batch carries a delay object (provider busy)
+//   t0 + 3.5 to 9.0 s  the batch carries a delay object (provider busy), so at least one 4 s poll sees it
 // so successive polls see queued -> running -> completed_with_errors. Retry failed restarts that video, which
 // then succeeds after 5.8 s. Cancel freezes the clock: whatever was done stays, the rest is cancelled.
 
@@ -31,10 +31,11 @@ const IMAGE_MS: readonly number[] = [2_000, 3_500];
 const VIDEO_MS = 7_500;
 const RETRY_QUEUED_MS = 800;
 const RETRY_RUN_MS = 5_000;
-const DELAY_FROM_MS = 5_000;
-const DELAY_UNTIL_MS = 8_500;
+const DELAY_FROM_MS = 3_500;
+const DELAY_UNTIL_MS = 9_000;
 const MAX_ACTIVE_BATCHES = 3;
 const SHOT_TITLES = ['Hero shot', 'Detail close-up', 'Slow push-in'] as const;
+const ACTIVE_ITEM_STATUSES: readonly ItemStatus[] = ['pending', 'planning', 'generating'];
 const MODES: readonly ReferenceMode[] = ['common_only', 'own_plus_common', 'own_only'];
 
 interface SimItem {
@@ -63,7 +64,8 @@ interface SimItemState {
 }
 
 const isoOf = (ms: number): string => new Date(ms).toISOString();
-const isTerminalJob = (status: JobStatus): boolean => status === 'succeeded' || status === 'failed' || status === 'cancelled';
+const isTerminalJob = (status: JobStatus): boolean =>
+  status === 'succeeded' || status === 'failed' || status === 'cancelled';
 
 function simulateItem(batch: SimBatch, itemIndex: number, clockMs: number): SimItemState {
   const item = batch.items[itemIndex];
@@ -121,6 +123,7 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
   const gid = batch.items[itemIndex]?.productGid ?? '';
   const handle = PRODUCTS.find((product) => product.id === gid)?.handle ?? 'product';
   const isVideo = job.type === 'video';
+  const extension = isVideo ? 'mp4' : 'jpg';
   const key = isVideo ? IMAGES_PER_PRODUCT + (job.outputIndex ?? 0) : (job.outputIndex ?? 0);
   return {
     id: objectId(0x700000 + batch.index * 1000 + itemIndex * 10 + key),
@@ -132,7 +135,7 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
     width: isVideo ? 720 : 1536,
     height: isVideo ? 1280 : 2048,
     durationSec: isVideo ? 8 : null,
-    filename: `rs-${handle}-${batch.id.slice(-6)}-${isVideo ? 'vid' : 'img'}${(job.outputIndex ?? 0) + 1}.${isVideo ? 'mp4' : 'jpg'}`,
+    filename: `rs-${handle}-${batch.id.slice(-6)}-${isVideo ? 'vid' : 'img'}${(job.outputIndex ?? 0) + 1}.${extension}`,
     scope: null,
     productGid: gid,
     shotTitle: SHOT_TITLES[key] ?? null,
@@ -143,7 +146,12 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
 function itemView(batch: SimBatch, itemIndex: number, state: SimItemState): BatchItemView {
   const item = batch.items[itemIndex];
   const product = PRODUCTS.find((candidate) => candidate.id === item?.productGid);
-  const toView = ({ type, outputIndex, status, errorCode }: SimJob): BatchJobView => ({ type, outputIndex, status, errorCode });
+  const toView = ({ type, outputIndex, status, errorCode }: SimJob): BatchJobView => ({
+    type,
+    outputIndex,
+    status,
+    errorCode,
+  });
   return {
     id: objectId(0x600000 + batch.index * 1000 + itemIndex),
     productGid: item?.productGid ?? '',
@@ -165,7 +173,7 @@ function deriveBatch(batch: SimBatch, nowMs: number): BatchDetail {
 
   const itemStatuses = items.map((item) => item.status);
   const outputs = items.flatMap((item) => item.outputs);
-  const finished = itemStatuses.every((status) => status !== 'pending' && status !== 'planning' && status !== 'generating');
+  const finished = itemStatuses.every((itemStatus) => !ACTIVE_ITEM_STATUSES.includes(itemStatus));
 
   let status: BatchDetail['status'];
   if (batch.cancelledAtMs !== null) status = 'cancelled';
@@ -328,7 +336,8 @@ export function createMockBatchStore(): MockBatchStore {
     cancel: (id) => {
       const batch = getBatch(id);
       const { status } = detailOf(batch);
-      if (batch.cancelledAtMs === null && (status === 'queued' || status === 'running')) batch.cancelledAtMs = Date.now();
+      const active = status === 'queued' || status === 'running';
+      if (batch.cancelledAtMs === null && active) batch.cancelledAtMs = Date.now();
       return toSummary(detailOf(batch));
     },
 

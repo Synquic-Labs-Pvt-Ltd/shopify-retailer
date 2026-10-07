@@ -49,7 +49,7 @@ export interface DraftState extends DraftData {
   addProductRef: (productId: string, ref: DraftReference) => void;
   updateRef: (clientId: string, patch: Partial<DraftReference>) => void;
   removeRef: (clientId: string) => void;
-  // Starts a fresh draft when it belongs to a different shop.
+  // Claims an unbound draft for the shop; a draft that belongs to a different shop starts over.
   bindShop: (shopId: string) => void;
   // Clears everything and issues a new idempotency key (after a batch is created).
   reset: () => void;
@@ -126,7 +126,10 @@ export const useDraftStore = create<DraftState>()(
           ),
         })),
       bindShop: (shopId) =>
-        set((state) => (state.shopId === shopId ? state : { ...emptyDraft(), shopId })),
+        set((state) => {
+          if (state.shopId === shopId) return state;
+          return state.shopId === null ? { shopId } : { ...emptyDraft(), shopId };
+        }),
       reset: () => set((state) => ({ ...emptyDraft(), shopId: state.shopId })),
     }),
     {

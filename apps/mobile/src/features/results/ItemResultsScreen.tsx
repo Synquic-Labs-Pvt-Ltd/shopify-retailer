@@ -83,7 +83,11 @@ export function ItemResultsScreen() {
               ))}
             </View>
           ) : (
-            <EmptyState icon="images-outline" title="Product not found" message="It may have been removed from this batch." />
+            <EmptyState
+              icon="images-outline"
+              title="Product not found"
+              message="It may have been removed from this batch."
+            />
           )
         ) : tiles.length === 0 ? (
           <EmptyState

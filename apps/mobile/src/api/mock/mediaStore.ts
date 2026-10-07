@@ -3,8 +3,8 @@ import { ApiError } from '../types';
 import { SAMPLE_VIDEO_URL, objectId, picture } from './util';
 
 // Reference uploads in mock mode. The staged target is mock://staged-upload; the app replaces the multipart
-// POST with fake progress. To exercise the failure paths: every 4th upload stops partway through the POST,
-// and every 7th ends in a failed processing step. A retry gets a new target and succeeds.
+// POST with fake progress. To exercise the failure paths: every 4th new file stops partway through the POST,
+// and every 7th ends in a failed processing step. A retry (the same clientId again) always succeeds.
 const UPLOAD_FAILS_EVERY = 4;
 const PROCESSING_FAILS_EVERY = 7;
 // GET /media polls a reference stays "processing" for.
@@ -28,6 +28,7 @@ export function createMockMediaStore(): MockMediaStore {
   const stored = new Map<string, StoredMedia>();
   let counter = 0x500000;
   let uploads = 0;
+  const seen = new Set<string>();
 
   const getEntry = (id: string): StoredMedia => {
     const entry = stored.get(id);
@@ -39,7 +40,9 @@ export function createMockMediaStore(): MockMediaStore {
     createUploads: (body) => ({
       targets: body.files.map((file) => {
         counter += 1;
-        uploads += 1;
+        const isRetry = seen.has(file.clientId);
+        seen.add(file.clientId);
+        if (!isRetry) uploads += 1;
         const id = objectId(counter);
         const isVideo = file.mimeType.startsWith('video/');
         stored.set(id, {
@@ -60,9 +63,9 @@ export function createMockMediaStore(): MockMediaStore {
             createdAt: new Date().toISOString(),
           },
           pollsLeft: isVideo ? VIDEO_POLLS : IMAGE_POLLS,
-          failsProcessing: uploads % PROCESSING_FAILS_EVERY === 0,
+          failsProcessing: !isRetry && uploads % PROCESSING_FAILS_EVERY === 0,
         });
-        const failsUpload = uploads % UPLOAD_FAILS_EVERY === 0;
+        const failsUpload = !isRetry && uploads % UPLOAD_FAILS_EVERY === 0;
         return {
           clientId: file.clientId,
           mediaId: id,

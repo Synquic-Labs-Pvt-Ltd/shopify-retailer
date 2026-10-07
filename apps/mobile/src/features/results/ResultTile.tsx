@@ -1,7 +1,18 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { MediaObject } from '@rs/shared';
-import { AppText, Icon, Image, PressableScale, Skeleton, colors, components, pressScale, radii, spacing } from '../../design';
+import {
+  AppText,
+  Icon,
+  Image,
+  PressableScale,
+  Skeleton,
+  colors,
+  components,
+  pressScale,
+  radii,
+  spacing,
+} from '../../design';
 import { formatDuration } from '../queue/format';
 
 const { outputAspectRatio } = components.image;

@@ -33,7 +33,9 @@ import { useReferenceProcessing } from './useReferenceProcessing';
 const PICKER_DELAY_MS = Platform.OS === 'ios' ? 400 : 0;
 
 function outputsLine(images: number, videos: number): string {
-  return `Each product gets ${images} ${images === 1 ? 'image' : 'images'} and ${videos} ${videos === 1 ? 'video' : 'videos'}.`;
+  const imageText = `${images} ${images === 1 ? 'image' : 'images'}`;
+  const videoText = `${videos} ${videos === 1 ? 'video' : 'videos'}`;
+  return `Each product gets ${imageText} and ${videoText}.`;
 }
 
 // SPEC 16.2 References: common and per-product references, live resolution and Generate.
@@ -70,7 +72,7 @@ export function ReferencesScreen() {
     return ids;
   }, [resolutions, serverUnresolved]);
   const slotsReady = allSlotsReady(products, productRefs, commonRefs);
-  const canGenerate = products.length > 0 && unresolvedIds.size === 0 && slotsReady && actions.ready;
+  const canGenerate = products.length > 0 && unresolvedIds.size === 0 && slotsReady;
 
   const openSheet = (target: ReferenceTarget) => setSheetTarget(target);
   const closeSheet = () => setSheetTarget(null);

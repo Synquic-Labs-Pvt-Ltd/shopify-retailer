@@ -7,6 +7,10 @@ export type DownloadState = { kind: 'idle' } | { kind: 'saving'; current: number
 
 const PERMISSION_MESSAGE = 'Allow photo access in Settings to save to your gallery.';
 
+function savedMessage(count: number): string {
+  return count === 1 ? 'Saved to gallery' : `Saved ${count} items to gallery`;
+}
+
 function saveFailureMessage(error: unknown): string {
   return error instanceof GalleryPermissionError ? PERMISSION_MESSAGE : 'Could not save the file. Try again.';
 }
@@ -43,7 +47,7 @@ export function useDownloads() {
       }
 
       if (permissionDenied) toast.error(PERMISSION_MESSAGE);
-      else if (saved === items.length) toast.success(items.length === 1 ? 'Saved to gallery' : `Saved ${items.length} items to gallery`);
+      else if (saved === items.length) toast.success(savedMessage(items.length));
       else if (saved === 0) toast.error('Could not save to the gallery. Try again.');
       else toast.error(`Saved ${saved} of ${items.length}. ${items.length - saved} could not be saved.`);
     },

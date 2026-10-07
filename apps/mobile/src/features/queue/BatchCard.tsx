@@ -1,7 +1,18 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { BatchSummary } from '@rs/shared';
-import { AppText, Image, PressableScale, ProgressBar, StatusChip, colors, components, pressScale, radii, spacing } from '../../design';
+import {
+  AppText,
+  Image,
+  PressableScale,
+  ProgressBar,
+  StatusChip,
+  colors,
+  components,
+  pressScale,
+  radii,
+  spacing,
+} from '../../design';
 import { plural, relativeTime } from './format';
 import { batchLabel, batchProgress, batchTone } from './status';
 

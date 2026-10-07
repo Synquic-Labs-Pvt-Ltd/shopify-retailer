@@ -2,7 +2,14 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo, useState } from 'react';
-import { FlatList, StyleSheet, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  FlatList,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBatch } from '../../api/batches';
 import type { MainStackParamList } from '../../app/navigation/types';
@@ -92,7 +99,11 @@ export function MediaViewerScreen() {
                 busy={downloads.state.kind === 'saving'}
                 onPress={() => void downloads.saveOne(current)}
               />
-              <ViewerButton icon="share-outline" accessibilityLabel="Share" onPress={() => void downloads.share(current)} />
+              <ViewerButton
+                icon="share-outline"
+                accessibilityLabel="Share"
+                onPress={() => void downloads.share(current)}
+              />
             </>
           )}
         </View>

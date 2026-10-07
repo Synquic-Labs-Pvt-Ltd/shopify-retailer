@@ -56,7 +56,7 @@ async function prepare(asset: PickedAsset, limits: ReferenceLimits): Promise<Pre
   try {
     prepared = asset.mediaType === 'image' ? await prepareImage(asset) : await prepareVideo(asset);
   } catch {
-    throw new Error(`An ${asset.mediaType} could not be processed.`);
+    throw new Error(`${asset.mediaType === 'video' ? 'A video' : 'An image'} could not be processed.`);
   }
   const problem = checkPreparedSize(prepared.fileSize, asset.mediaType, limits);
   if (problem !== null) throw new Error(problem);
@@ -156,5 +156,5 @@ export function useReferenceActions() {
     [toast],
   );
 
-  return { add, retry, remove: discardReference, ready: limits !== undefined };
+  return { add, retry, remove: discardReference };
 }

@@ -74,7 +74,11 @@ function postMultipart(
 
 // Mock mode hands out mock:// targets. The POST is replaced by timed fake progress; a target whose url has
 // fail=1 stops partway with an error, so the retry path can be demonstrated.
-function simulateUpload(target: UploadTarget, onProgress: (fraction: number) => void, signal: AbortSignal): Promise<void> {
+function simulateUpload(
+  target: UploadTarget,
+  onProgress: (fraction: number) => void,
+  signal: AbortSignal,
+): Promise<void> {
   const STEPS = 12;
   const failsAt = target.url.includes('fail=1') ? 7 : -1;
   return new Promise<void>((resolve, reject) => {
