@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "outputs": {
+    "imagesPerProduct": 2,
+    "videosPerProduct": 1
+  },
+  "provider": "vertex",
+  "models": {
+    "planner": "gemini-2.5-flash",
+    "image": "gemini-2.5-flash-image",
+    "video": "veo-3.1-generate-001"
+  },
+  "locations": {
+    "planner": "us-central1",
+    "image": "us-central1",
+    "video": "us-central1"
+  },
+  "image": {
+    "aspectRatio": "3:4",
+    "imageSize": "2K",
+    "outputMimeType": "image/jpeg"
+  },
+  "ai": {
+    "image": {
+      "maxProductImages": 3,
+      "maxStyleReferences": 3
+    },
+    "planner": {
+      "maxReferenceImages": 6,
+      "maxReferenceVideos": 2,
+      "temperature": 0.6
+    }
+  },
+  "video": {
+    "durationSeconds": 8,
+    "aspectRatio": "9:16",
+    "resolution": "720p",
+    "generateAudio": false,
+    "personGeneration": "allow_adult",
+    "negativePrompt": "text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look"
+  },
+  "references": {
+    "maxPerProduct": 5,
+    "maxCommon": 10,
+    "maxImageMB": 20,
+    "maxVideoMB": 100,
+    "maxVideoSeconds": 60,
+    "imageMimeTypes": ["image/jpeg", "image/png", "image/webp"],
+    "videoMimeTypes": ["video/mp4", "video/quicktime"]
+  },
+  "batch": {
+    "maxProductsPerBatch": 50,
+    "maxActiveBatchesPerShop": 3,
+    "maxJobsPerShopPerDay": 300
+  },
+  "queue": {
+    "tickMs": 1000,
+    "leaseMs": 180000,
+    "maxAttempts": 3,
+    "backoffBaseMs": 5000,
+    "backoffMaxMs": 300000,
+    "jobMaxAgeHours": 24,
+    "videoPollIntervalMs": 15000,
+    "videoMaxWaitMinutes": 15
+  },
+  "lanes": {
+    "vertex:gemini-2.5-flash": {
+      "rpm": 30,
+      "rph": 1000,
+      "rpd": 10000,
+      "maxConcurrent": 4,
+      "safetyFactor": 0.9,
+      "dailyResetTimeZone": "UTC",
+      "pollLane": null
+    },
+    "vertex:gemini-2.5-flash-image": {
+      "rpm": 10,
+      "rph": 300,
+      "rpd": 2000,
+      "maxConcurrent": 2,
+      "safetyFactor": 0.9,
+      "dailyResetTimeZone": "UTC",
+      "pollLane": null
+    },
+    "vertex:veo-3.1-generate-001": {
+      "rpm": 4,
+      "rph": 60,
+      "rpd": 300,
+      "maxConcurrent": 3,
+      "safetyFactor": 0.9,
+      "dailyResetTimeZone": "UTC",
+      "pollLane": "vertex:poll"
+    },
+    "vertex:poll": {
+      "rpm": 60,
+      "rph": null,
+      "rpd": null,
+      "maxConcurrent": null,
+      "safetyFactor": 0.9,
+      "dailyResetTimeZone": "UTC",
+      "pollLane": null
+    },
+    "fake:*": {
+      "rpm": 60,
+      "rph": null,
+      "rpd": null,
+      "maxConcurrent": 4,
+      "safetyFactor": 0.9,
+      "dailyResetTimeZone": "UTC",
+      "pollLane": null
+    }
+  },
+  "fake": {
+    "latencyMs": 3000,
+    "rateLimitProbability": 0
+  },
+  "storage": {
+    "driver": "shopify"
+  }
+}

@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Dependency install scripts are denied by default (pnpm 11+), and an undecided script fails the install.
+# Both entries below are explicit denials, and nothing here needs an install script:
+# - esbuild: its postinstall only swaps in the prebuilt binary, which the platform package already provides.
+# - mongodb-memory-server: its postinstall pre-downloads mongod, which is otherwise downloaded on first use.
+# Add `true` for a package only after reviewing its script.
+allowBuilds:
+  esbuild: false
+  mongodb-memory-server: false

@@ -1,0 +1,25 @@
+# Retailer Studio Shopify app configuration (SPEC 8.1).
+# Replace REPLACE_WITH_CLIENT_ID and REPLACE_WITH_PUBLIC_BASE_URL (the PUBLIC_BASE_URL host), then deploy with the Shopify CLI.
+# webhooks.api_version must equal SHOPIFY_API_VERSION.
+
+client_id = "REPLACE_WITH_CLIENT_ID"
+name = "Retailer Studio"
+application_url = "https://REPLACE_WITH_PUBLIC_BASE_URL/"
+embedded = false
+
+[access_scopes]
+scopes = "read_products,read_files,write_files"
+
+[auth]
+redirect_urls = ["https://REPLACE_WITH_PUBLIC_BASE_URL/auth/shopify/callback"]
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/webhooks/shopify"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/webhooks/shopify"

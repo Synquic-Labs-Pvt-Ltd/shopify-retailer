@@ -27,6 +27,7 @@ ios/
 *service-account*.json
 gcp-*.json
 google-credentials*.json
+secrets/
 
 # editor (never commit: auto-run task vector)
 .vscode/

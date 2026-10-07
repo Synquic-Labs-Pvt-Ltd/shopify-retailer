@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Retailer Studio",
+    "slug": "retailer-studio",
+    "scheme": "retailerstudio",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#E7E7E5",
+    "ios": {
+      "bundleIdentifier": "com.synquic.retailerstudio",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.synquic.retailerstudio",
+      "backgroundColor": "#E7E7E5"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Retailer Studio needs access to your photos to save your generated images and videos.",
+          "savePhotosPermission": "Retailer Studio saves your generated images and videos to your photo library.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": ["photo", "video"]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Retailer Studio needs access to your photos so you can pick reference images and videos.",
+          "cameraPermission": "Retailer Studio needs the camera so you can take reference photos and videos.",
+          "microphonePermission": "Retailer Studio needs the microphone to record sound with reference videos."
+        }
+      ],
+      "expo-video",
+      "expo-font"
+    ]
+  }
+}
