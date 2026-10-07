@@ -139,6 +139,27 @@ describe('live lane limits', () => {
     expect((await RateCounterModel.find({ lane: PLANNER_LANE, window: 'minute' }).lean()).every((counter) => counter.count <= 600)).toBe(true);
   }, 120_000);
 
+  it('counts video operations in flight against the lane concurrency', async () => {
+    e2e.editConfig((config) => {
+      const video = defined(config.lanes[`fake:${config.models.video}`]);
+      video.maxConcurrent = 2;
+    });
+    const batchId = await newBatch(4);
+    let mostInFlight = 0;
+    const sample = async (): Promise<boolean> => {
+      const inFlight = await JobModel.countDocuments({ batchId, type: 'video', status: { $in: ['running', 'awaiting_operation'] } });
+      mostInFlight = Math.max(mostInFlight, inFlight);
+      return (await BatchModel.findById(batchId).lean())?.status === 'completed';
+    };
+    await e2e.drive(sample, { timeoutMs: 60_000, intervalMs: 5 });
+    await e2e.settle();
+    expect(mostInFlight).toBe(2);
+    expect(await JobModel.countDocuments({ batchId, type: 'video', status: 'succeeded' })).toBe(4);
+    e2e.editConfig((config) => {
+      defined(config.lanes[`fake:${config.models.video}`]).maxConcurrent = 50;
+    });
+  }, 90_000);
+
   it('rejects an invalid live edit and keeps the last good config', () => {
     const before = e2e.config.get().fake.rateLimitProbability;
     expect(() =>

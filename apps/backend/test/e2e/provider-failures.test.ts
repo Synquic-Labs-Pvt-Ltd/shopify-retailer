@@ -173,6 +173,38 @@ describe('errors that pause a lane', () => {
   }, 90_000);
 });
 
+describe('polling a video operation', () => {
+  it('pauses the poll lane, not the submit lane, and does not resubmit the video', async () => {
+    const original = provider().pollVideo.bind(provider());
+    let limited = true;
+    vi.spyOn(provider(), 'pollVideo').mockImplementation(async (pollRequest) =>
+      limited ? { ok: false, error: classifyAiError(429, fixture('429-per-minute-retryinfo.json')) } : original(pollRequest),
+    );
+    const submit = vi.spyOn(provider(), 'submitVideo');
+    const batchId = await newBatch(0);
+    await e2e.drive(async () => ((await JobModel.findOne({ batchId, type: 'video' }).lean())?.deferrals ?? 0) >= 1, { timeoutMs: 30_000 });
+    await e2e.settle();
+
+    const poll = defined(await LaneStateModel.findById('fake:poll').lean());
+    expect(poll.reason).toBe('rate_limited');
+    expect((await LaneStateModel.findById('fake:veo-3.1-generate-001').lean())?.pausedUntil ?? null).toBeNull();
+    expect(await paused()).toEqual(['fake:poll:rate_limited']);
+    const video = defined(await JobModel.findOne({ batchId, type: 'video' }).lean());
+    expect(video).toMatchObject({ status: 'awaiting_operation', attempts: 1, deferrals: 1 });
+    expect(video.operation?.nextPollAt?.getTime()).toBe(poll.pausedUntil?.getTime());
+    // A video that is only waiting for its poll reports the poll lane, and the images are not held back.
+    expect((await getBatch(client, batchId)).delay).toEqual({ reason: 'rate_limited', resumesAt: defined(poll.pausedUntil).toISOString() });
+
+    limited = false;
+    await LaneStateModel.deleteOne({ _id: 'fake:poll' });
+    await JobModel.updateOne({ _id: video._id }, { $set: { 'operation.nextPollAt': new Date() } });
+    expect((await e2e.driveBatch(batchId, { timeoutMs: 60_000 })).status).toBe('completed');
+    await e2e.settle();
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(await JobModel.findById(video._id).lean()).toMatchObject({ status: 'succeeded', attempts: 1, deferrals: 1 });
+  }, 90_000);
+});
+
 describe('Shopify storage hiccups while outputs are saved', () => {
   it('retries the uploads and ends with exactly one file per output', async () => {
     const filesBefore = e2e.stub.shop(SHOP).files.size;
