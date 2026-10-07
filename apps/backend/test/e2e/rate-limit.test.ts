@@ -105,6 +105,8 @@ describe('live lane limits', () => {
 
   it('paces claims with rpm 1, then applies a raised rpm without a restart', async () => {
     await clearOfMinuteEnd();
+    // The first test already spent requests in this minute window: start from an empty one.
+    await RateCounterModel.deleteMany({});
     e2e.editConfig((config) => {
       const lane = defined(config.lanes['fake:*']);
       lane.rpm = 1;
@@ -145,6 +147,16 @@ describe('live lane limits', () => {
       }),
     ).toThrow(/rejected/);
     expect(e2e.config.get().fake.rateLimitProbability).toBe(before);
+  });
+
+  it('rejects an edit that leaves a model without a lane, which would stall its jobs without a word', () => {
+    expect(() =>
+      e2e.editConfig((config) => {
+        delete config.lanes['fake:*'];
+        delete config.lanes[`fake:${config.models.video}`];
+      }),
+    ).toThrow(/no lane for fake:gemini-2.5-flash/);
+    expect(defined(e2e.config.get().lanes['fake:*']).rpm).toBe(600);
   });
 });
 

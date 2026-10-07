@@ -207,8 +207,31 @@ describe('shop/redact', () => {
     expect(await footprint(gone)).toEqual({ webhook_events: 5 });
   });
 
+});
+
+describe('uninstall while jobs are running', () => {
+  it('cancels the batch and lets the running jobs end without errors', async () => {
+    const batchId = await seed(stays, 1, staysReference);
+    await e2e.drive(async () => (await JobModel.countDocuments({ batchId, type: 'image', status: 'running' })) > 0, { timeoutMs: 30_000 });
+    expect((await sendWebhook(e2e, { topic: 'app/uninstalled', shop: STAYS, id: 'wh-uninstall-busy' })).status).toBe(200);
+    await e2e.settle();
+
+    expect(await unfinished(stays.session.shop.id)).toBe(0);
+    expect((await BatchModel.findById(batchId).lean())?.status).toBe('cancelled');
+    const jobs = await JobModel.find({ batchId }).lean();
+    expect(jobs.every((job) => job.status === 'succeeded' || job.status === 'cancelled')).toBe(true);
+    expect(jobs.some((job) => job.status === 'cancelled')).toBe(true);
+    expect((await stays.get('/api/v1/me')).status).toBe(409);
+  }, 90_000);
+
   it('logged only the expected warnings', () => {
-    const expected = ['ignoring webhook for an unsubscribed topic', 'released blocked jobs whose dependencies were already terminal'];
+    const expected = [
+      'ignoring webhook for an unsubscribed topic',
+      'released blocked jobs whose dependencies were already terminal',
+      'outcome dropped: the job is no longer owned by this runner',
+      'persisting an output failed',
+      'fileStatus poll failed',
+    ];
     expect(e2e.problems(expected)).toEqual([]);
   });
 });

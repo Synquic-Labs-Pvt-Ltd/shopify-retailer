@@ -21,7 +21,7 @@ import { BatchItemModel, BatchModel } from '../../src/modules/batches/models';
 import { MediaAssetModel } from '../../src/modules/media/models';
 import { JobModel } from '../../src/modules/queue/models';
 import { ShopModel } from '../../src/modules/shops/model';
-import { apiClient, browserFlow, createBatch, exchangeRequest, getBatch, uploadReferences, waitMediaSettled, type ApiClient, type UploadSpec } from './support/client';
+import { apiClient, browserFlow, createBatch, defined, errorOf, exchangeRequest, getBatch, uploadReferences, waitMediaSettled, type ApiClient, type UploadSpec } from './support/client';
 import { MONGO_START_TIMEOUT_MS, startE2e, type E2e } from './support/harness';
 
 const SHOP = 'demo-store.myshopify.com';
@@ -318,6 +318,14 @@ describe('batch', () => {
     const outputIds = detail.items.flatMap((item) => item.outputs.map((output) => output.id));
     const listed = mediaListResponseSchema.parse((await client.get(`/api/v1/media?ids=${outputIds.slice(0, 9).join(',')}`)).body);
     expect(listed.items.every((item) => item.status === 'ready')).toBe(true);
+  });
+
+  it('does not let an output be deleted', async () => {
+    const output = defined(detail.items[0]?.outputs[0]);
+    const res = await client.delete(`/api/v1/media/${output.id}`);
+    expect(res.status).toBe(403);
+    expect(errorOf(res).code).toBe('forbidden');
+    expect((await MediaAssetModel.findById(output.id).lean())?.status).toBe('ready');
   });
 
   it('stored the planner plan, the audit trail and the output links', async () => {

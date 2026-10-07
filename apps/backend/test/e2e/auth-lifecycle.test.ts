@@ -71,6 +71,18 @@ describe('the browser flow rejects what Shopify would not send', () => {
     expect((await post('/api/v1/auth/exchange', { code: flow.code })).status).toBe(400);
   });
 
+  it('runs the offline phase again when the stored scopes no longer cover the required ones', async () => {
+    await login(e2e, SHOP);
+    const online = await startFlow(SHOP);
+    expect(new URL(online.authorizeUrl).searchParams.getAll('grant_options[]')).toEqual(['per-user']);
+
+    await ShopModel.updateOne({ shopDomain: SHOP }, { $set: { scopes: ['read_products'] } });
+    const offline = await startFlow(SHOP);
+    expect(new URL(offline.authorizeUrl).searchParams.getAll('grant_options[]')).toEqual([]);
+    expect((await get(offline.callback)).status).toBe(302);
+    expect([...(defined(await ShopModel.findOne({ shopDomain: SHOP }).lean()).scopes)].sort()).toEqual(['read_files', 'read_products', 'write_files']);
+  });
+
   it('installs from the app url landing page without a waiting app', async () => {
     const signed = (shop: string): string => `/?${signedQueryString({ shop, timestamp: '1760000000', host: 'YWRtaW4' }, SECRET)}`;
 

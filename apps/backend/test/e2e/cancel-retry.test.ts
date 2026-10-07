@@ -188,12 +188,42 @@ describe('retry failed', () => {
   }, 120_000);
 });
 
+describe('Shopify revokes the token while a batch runs', () => {
+  it('fails the outputs that cannot be stored and finishes them after the merchant logs in again', async () => {
+    const batchId = await newBatch([0]);
+    e2e.stub.revokeTokens(SHOP);
+    const batch = await e2e.driveBatch(batchId, { timeoutMs: 60_000 });
+    expect(batch.status).toBe('failed');
+    await e2e.settle();
+
+    const jobs = await jobsOf(batchId);
+    expect(jobs.filter((job) => job.type === 'plan').every((job) => job.status === 'succeeded')).toBe(true);
+    const outputs = jobs.filter((job) => job.type !== 'plan');
+    expect(outputs.every((job) => job.status === 'failed' && job.error?.code === 'shopify_upload_failed')).toBe(true);
+    expect(await MediaAssetModel.countDocuments({ batchId, status: 'ready' })).toBe(0);
+
+    // The app is sent back to login; the shop needs a new offline token.
+    expect((await client.get(`/api/v1/batches/${batchId}`)).status).toBe(409);
+    client = await login(e2e, SHOP);
+    const detail = await getBatch(client, batchId);
+    expect(detail.counts).toMatchObject({ jobsFailed: 3, jobsSucceeded: 1 });
+
+    expect((await client.post(`/api/v1/batches/${batchId}/retry-failed`)).status).toBe(200);
+    expect((await e2e.driveBatch(batchId, { timeoutMs: 60_000 })).status).toBe('completed');
+    await e2e.settle();
+    const after = await getBatch(client, batchId);
+    expect(after.items[0]?.outputs).toHaveLength(3);
+    expect(after.items[0]?.outputs.every((output) => output.status === 'ready')).toBe(true);
+  }, 120_000);
+});
+
 describe('logs', () => {
   it('only warns about dropped or retried work', () => {
     const expected = [
       'outcome dropped: the job is no longer owned by this runner',
       'persisting an output failed',
       'fileCreate rejected the upload',
+      'shop requires re-authorization',
       'released blocked jobs whose dependencies were already terminal',
     ];
     expect(e2e.problems(expected)).toEqual([]);
