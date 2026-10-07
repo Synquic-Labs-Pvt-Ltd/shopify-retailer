@@ -4,3 +4,7 @@ export interface GenerationService {
   // Handlers for the plan, image and video job types, to register with the queue runner.
   readonly handlers: readonly JobHandler[];
 }
+
+export { createGenerationModule } from './module';
+export { outcomeFromAiError } from './outcomes';
+export type { GenerationDeps, HandlerBatches } from './runtime';
