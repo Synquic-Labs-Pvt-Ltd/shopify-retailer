@@ -88,6 +88,8 @@ export interface StubKnobs {
   rejectRefresh: Set<string>;
   // The next `remaining` GraphQL requests of this operation answer THROTTLED.
   throttle: { operation: string; remaining: number } | null;
+  // The next `remaining` GraphQL requests of this operation answer this HTTP status.
+  httpFailure: { operation: string; status: number; remaining: number } | null;
   // Return userErrors to make fileCreate refuse a file.
   fileCreateRejection: ((file: FileCreateRecord) => UserError[] | undefined) | null;
   // Status queries answered PROCESSING before a file turns READY.
@@ -116,6 +118,7 @@ export function createStubState(): StubState {
       failShopQuery: false,
       rejectRefresh: new Set(),
       throttle: null,
+      httpFailure: null,
       fileCreateRejection: null,
       // References and videos take a second status query, still images are ready at once.
       processingQueries: (file) => (file.filename.startsWith('rs-ref-') || file.mediaType === 'video' ? 1 : 0),

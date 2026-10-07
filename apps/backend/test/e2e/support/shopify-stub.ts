@@ -139,7 +139,11 @@ export function createShopifyStub(options: Options): ShopifyStub {
     if (token === undefined || !shop.offlineTokens.has(token)) {
       return jsonResponse(401, { errors: '[API] Invalid API key or access token (unrecognized login or wrong password)' });
     }
-    const { throttle } = state.knobs;
+    const { httpFailure, throttle } = state.knobs;
+    if (httpFailure !== null && httpFailure.operation === operation && httpFailure.remaining > 0) {
+      httpFailure.remaining -= 1;
+      return jsonResponse(httpFailure.status, { errors: 'The stub is failing on purpose' });
+    }
     if (throttle !== null && throttle.operation === operation && throttle.remaining > 0) {
       throttle.remaining -= 1;
       return graphqlThrottled();

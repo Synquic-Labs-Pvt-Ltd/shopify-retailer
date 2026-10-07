@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Express } from 'express';
@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 import { isTerminalBatchStatus, type GenerationConfig, type LaneConfig } from '@rs/shared';
 import { createApp } from '../../../src/app';
 import { createContainer, type Container } from '../../../src/container';
-import { DEFAULT_CONFIG_PATH, createConfigService, parseGenerationConfig, type ConfigService } from '../../../src/core/config';
+import { DEFAULT_CONFIG_PATH, DEFAULT_PROMPTS_DIR, createConfigService, parseGenerationConfig, type ConfigService, type PromptName } from '../../../src/core/config';
 import { parseEnv, type Env } from '../../../src/core/env';
 import { BatchModel, type BatchDoc } from '../../../src/modules/batches/models';
 import { JobModel } from '../../../src/modules/queue/models';
@@ -40,6 +40,8 @@ export function e2eConfig(base: GenerationConfig): GenerationConfig {
 export interface DriveOptions {
   timeoutMs?: number;
   intervalMs?: number;
+  // Containers whose runners tick together on every round. Defaults to the main one.
+  runners?: Container[];
 }
 
 export interface E2e {
@@ -54,6 +56,10 @@ export interface E2e {
   mongo: TestMongo;
   // Rewrites the generation config file and hot reloads it, like an operator editing it live.
   editConfig(mutate: (config: GenerationConfig) => void): void;
+  // Rewrites a prompt template (a private copy of config/prompts) and hot reloads it.
+  editPrompt(name: PromptName, mutate: (text: string) => string): void;
+  // A second backend process on the same database, sharing nothing in memory with the first.
+  secondInstance(): Container;
   // One queue tick, with no timers involved.
   tick(): Promise<void>;
   // Ticks until the condition holds. Fails fast if the backend reached for an unknown host.
@@ -92,6 +98,8 @@ export async function startE2e(options: StartOptions = {}): Promise<E2e> {
 
   const directory = mkdtempSync(join(tmpdir(), 'rs-e2e-'));
   const configPath = join(directory, 'generation.config.json');
+  const promptsDir = join(directory, 'prompts');
+  cpSync(DEFAULT_PROMPTS_DIR, promptsDir, { recursive: true });
   const initial = e2eConfig(parseGenerationConfig(readFileSync(DEFAULT_CONFIG_PATH, 'utf8')));
   options.config?.(initial);
   writeFileSync(configPath, JSON.stringify(initial, null, 2));
@@ -105,7 +113,7 @@ export async function startE2e(options: StartOptions = {}): Promise<E2e> {
   });
 
   const mongo = await startTestMongo(options.dbName ?? 'rs_e2e');
-  const config = createConfigService({ logger, configPath, watch: false });
+  const config = createConfigService({ logger, configPath, promptsDir, watch: false });
   const container = createContainer({ env, logger, config });
   const app = createApp({ env, logger, config, container });
   await Promise.all(mongoose.modelNames().map((name) => mongoose.model(name).init()));
@@ -145,13 +153,26 @@ export async function startE2e(options: StartOptions = {}): Promise<E2e> {
       }
     },
 
+    editPrompt(name, mutate) {
+      const path = join(promptsDir, `${name}.md`);
+      const previous = readFileSync(path, 'utf8');
+      writeFileSync(path, mutate(previous));
+      const result = config.reload();
+      if (!result.ok) {
+        writeFileSync(path, previous);
+        throw new Error(`The prompt edit was rejected: ${result.errors.join('; ')}`);
+      }
+    },
+
+    secondInstance: () => createContainer({ env, logger, config }),
+
     tick: () => container.queue.runner.tickOnce(),
 
     async drive(until, driveOptions = {}) {
-      const { timeoutMs = 60_000, intervalMs = 25 } = driveOptions;
+      const { timeoutMs = 60_000, intervalMs = 25, runners = [container] } = driveOptions;
       const deadline = Date.now() + timeoutMs;
       for (;;) {
-        await container.queue.runner.tickOnce();
+        await Promise.all(runners.map((runner) => runner.queue.runner.tickOnce()));
         if (stub.state.unexpected.length > 0) throw new Error(`Unexpected outbound requests: ${stub.state.unexpected.join(', ')}`);
         if (await until()) return;
         if (Date.now() > deadline) throw new Error(`drive timed out after ${timeoutMs} ms\n${await describeJobs()}`);

@@ -17,6 +17,15 @@ import type { E2e } from './harness';
 import type { ApproveOptions } from './shopify-stub';
 import { waitFor } from './wait';
 
+let nextClientIp = 0;
+
+// The auth routes allow 30 requests a minute per client IP. Behind the proxy the IP comes from
+// X-Forwarded-For, so a test that talks to them a lot pretends to be a new phone every time.
+export function withNewIp(test: request.Test): request.Test {
+  nextClientIp += 1;
+  return test.set('x-forwarded-for', `203.0.113.${(nextClientIp % 250) + 1}`);
+}
+
 export interface Pkce {
   verifier: string;
   challenge: string;
@@ -38,14 +47,14 @@ export interface BrowserFlow {
 // backend redirects to the app deep link.
 export async function browserFlow(e2e: E2e, shopDomain: string, approve: ApproveOptions = {}): Promise<BrowserFlow> {
   const pkce = createPkce();
-  const start = await request(e2e.app).get('/auth/shopify/start').query({ shop: shopDomain, challenge: pkce.challenge });
+  const start = await withNewIp(request(e2e.app).get('/auth/shopify/start')).query({ shop: shopDomain, challenge: pkce.challenge });
   if (start.status !== 302) throw new Error(`start answered ${start.status}: ${start.text}`);
   const locations = [String(start.headers.location)];
 
   for (let hop = 0; hop < 4; hop += 1) {
     const location = locations[locations.length - 1] ?? '';
     if (!location.startsWith('https://')) break;
-    const callback = await request(e2e.app).get(e2e.stub.approve(location, approve));
+    const callback = await withNewIp(request(e2e.app).get(e2e.stub.approve(location, approve)));
     if (callback.status !== 302) throw new Error(`callback answered ${callback.status}: ${callback.text}`);
     locations.push(String(callback.headers.location));
   }
@@ -55,9 +64,7 @@ export async function browserFlow(e2e: E2e, shopDomain: string, approve: Approve
 }
 
 export function exchangeRequest(e2e: E2e, flow: BrowserFlow, overrides: Record<string, unknown> = {}): request.Test {
-  return request(e2e.app)
-    .post('/api/v1/auth/exchange')
-    .send({ code: flow.code, codeVerifier: flow.pkce.verifier, platform: 'android', deviceName: 'Pixel 8', ...overrides });
+  return withNewIp(request(e2e.app).post('/api/v1/auth/exchange')).send({ code: flow.code, codeVerifier: flow.pkce.verifier, platform: 'android', deviceName: 'Pixel 8', ...overrides });
 }
 
 export interface ApiClient {
