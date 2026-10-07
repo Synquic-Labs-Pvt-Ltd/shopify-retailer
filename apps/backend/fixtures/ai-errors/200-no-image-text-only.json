@@ -1,0 +1,23 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "Here is a description of the scene instead of an image."
+          }
+        ]
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 412,
+    "candidatesTokenCount": 14,
+    "totalTokenCount": 426
+  },
+  "modelVersion": "gemini-2.5-flash-image",
+  "responseId": "r-noimage-1"
+}

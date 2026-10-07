@@ -1,0 +1,20 @@
+{
+  "error": {
+    "code": 429,
+    "message": "Quota exceeded for aiplatform.googleapis.com/online_prediction_requests_per_base_model_per_day with base model: veo-3.1-generate-001. Please submit a quota increase request.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "RATE_LIMIT_EXCEEDED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "service": "aiplatform.googleapis.com",
+          "quota_metric": "aiplatform.googleapis.com/online_prediction_requests_per_base_model_per_day",
+          "quota_limit": "OnlinePredictionRequestsPerDayPerProjectPerBaseModel",
+          "consumer": "projects/123456789012"
+        }
+      }
+    ]
+  }
+}
