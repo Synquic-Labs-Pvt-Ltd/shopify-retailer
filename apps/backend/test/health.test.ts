@@ -46,7 +46,7 @@ describe('error handling', () => {
     expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');
   });
 
-  it.each(['/api/v1/me', '/api/v1/products', '/api/v1/media?ids=x'])('rejects %s without a bearer token', async (path) => {
+  it.each(['/api/v1/me', '/api/v1/products', '/api/v1/media?ids=x', '/api/v1/batches'])('rejects %s without a bearer token', async (path) => {
     const res = await request(app).get(path);
     expect(res.status).toBe(401);
     expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');

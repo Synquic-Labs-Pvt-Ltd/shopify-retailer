@@ -40,6 +40,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api/v1', createApiLimiter());
   app.use('/api/v1', container.catalog.router);
   app.use('/api/v1', container.media.router);
+  app.use('/api/v1', container.batches.router);
 
   app.get('/health', async (_req, res) => {
     const db = getDbState();
