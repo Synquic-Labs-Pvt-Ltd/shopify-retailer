@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": 400,
+    "message": "Unable to submit request because the model gemini-2.5-flash-image does not support the imageSize parameter. Remove the imageSize parameter and try again.",
+    "status": "INVALID_ARGUMENT"
+  }
+}

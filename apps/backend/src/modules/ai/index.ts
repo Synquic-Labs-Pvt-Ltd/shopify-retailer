@@ -102,3 +102,31 @@ export interface AiService {
   // Plain {{placeholder}} substitution; product data is inserted as text, never as instructions.
   renderPrompt(template: string, values: Record<string, string>): string;
 }
+
+// Additive exports (Track C): the factory, the error classifier and the pure prompt helpers.
+export { createAiModule, type AiModuleDeps } from './module';
+export {
+  RAW_BODY_LIMIT,
+  classifyAiError,
+  classifyOperationError,
+  classifyTransportError,
+  makeAiError,
+  parseRetryDelayMs,
+  truncateBody,
+  type ClassifyOptions,
+} from './errors';
+export {
+  buildFallbackPlan,
+  buildImageParts,
+  buildPlannerParts,
+  renderImagePrompt,
+  renderPlannerSystemPrompt,
+  renderPrompt,
+  renderVideoPrompt,
+  type ImageInput,
+  type ImagePartsInput,
+  type PlannerPartsInput,
+  type ReferenceVideoInput,
+} from './prompts';
+export { buildPlanResponseSchema } from './schema';
+export { buildFakePlan } from './fake';

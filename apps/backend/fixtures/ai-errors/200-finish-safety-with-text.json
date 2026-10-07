@@ -1,0 +1,18 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "I cannot create that image."
+          }
+        ]
+      },
+      "finishReason": "SAFETY",
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-2.5-flash-image",
+  "responseId": "r-safety-2"
+}

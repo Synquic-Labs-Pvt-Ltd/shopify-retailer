@@ -1,0 +1,11 @@
+{
+  "name": "projects/my-proj/locations/us-central1/publishers/google/models/veo-3.1-generate-001/operations/0a1b2c3d",
+  "done": true,
+  "response": {
+    "@type": "type.googleapis.com/cloud.ai.large_models.vision.GenerateVideoResponse",
+    "raiMediaFilteredCount": 1,
+    "raiMediaFilteredReasons": [
+      "The generated video was filtered by Google's Responsible AI practices. Support codes: 29310472"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "error": {
+    "code": 429,
+    "message": "Quota exceeded for aiplatform.googleapis.com/generate_content_requests_per_minute_per_project_per_base_model with base model: gemini-2.5-flash-image. Please submit a quota increase request. https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "RATE_LIMIT_EXCEEDED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "service": "aiplatform.googleapis.com",
+          "quota_metric": "aiplatform.googleapis.com/generate_content_requests_per_minute_per_project_per_base_model",
+          "quota_limit": "GenerateContentRequestsPerMinutePerProjectPerBaseModel",
+          "consumer": "projects/123456789012",
+          "quota_limit_value": "10"
+        }
+      }
+    ]
+  }
+}

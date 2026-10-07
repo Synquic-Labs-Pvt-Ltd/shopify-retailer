@@ -1,0 +1,10 @@
+{
+  "candidates": [
+    {
+      "finishReason": "PROHIBITED_CONTENT",
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-2.5-flash-image",
+  "responseId": "r-prohibited-1"
+}

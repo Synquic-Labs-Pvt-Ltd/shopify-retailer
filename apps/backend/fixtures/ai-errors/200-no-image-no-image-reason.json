@@ -1,0 +1,10 @@
+{
+  "candidates": [
+    {
+      "finishReason": "NO_IMAGE",
+      "index": 0
+    }
+  ],
+  "modelVersion": "gemini-2.5-flash-image",
+  "responseId": "r-noimage-2"
+}
