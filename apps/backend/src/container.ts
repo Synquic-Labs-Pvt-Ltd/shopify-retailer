@@ -3,6 +3,8 @@ import type { Env } from './core/env';
 import type { Logger } from './core/logger';
 import { createAiModule, type AiService } from './modules/ai';
 import { createAuthModule, type AuthModule } from './modules/auth';
+import { createCatalogModule, type CatalogModule } from './modules/catalog';
+import { createMediaModule, type MediaModule } from './modules/media';
 import type { QueueJob, QueueModule } from './modules/queue';
 import { createQueueModule } from './modules/queue/module';
 import type { RateLimitService } from './modules/ratelimit';
@@ -21,6 +23,10 @@ export interface Container {
   rateLimit: RateLimitService;
   queue: QueueModule;
   ai: AiService;
+  catalog: CatalogModule;
+  media: MediaModule;
+  // The media delete guard needs the batches module, which is built after media. Batches registers here.
+  setMediaInUseCheck(check: (shopId: string, mediaId: string) => Promise<boolean>): void;
   // Modules that react to job completion (batches) subscribe here. The queue runner calls every
   // listener after a job reaches succeeded, failed or cancelled. A listener's error is logged, not thrown.
   onJobTerminal(listener: JobTerminalListener): void;
@@ -41,6 +47,17 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
 
   const rateLimit = createRateLimitModule({ getConfig, logger });
   const ai = createAiModule({ env, logger, getConfig });
+
+  const requireAuth = auth.service.requireAuth;
+  const catalog = createCatalogModule({ admin: shopify.service.admin, requireAuth, logger });
+  let mediaInUseCheck: (shopId: string, mediaId: string) => Promise<boolean> = async () => false;
+  const media = createMediaModule({
+    admin: shopify.service.admin,
+    requireAuth,
+    getConfig,
+    logger,
+    isMediaInUse: (shopId, mediaId) => mediaInUseCheck(shopId, mediaId),
+  });
 
   const terminalListeners: JobTerminalListener[] = [];
   const queue = createQueueModule({
@@ -64,6 +81,7 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
   });
   shopify.service.registerRedactHook(async (shopId) => {
     await queue.store.purgeShop(shopId);
+    await media.service.purgeShop(shopId);
   });
 
   return {
@@ -73,6 +91,11 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     rateLimit,
     queue,
     ai,
+    catalog,
+    media,
+    setMediaInUseCheck(check) {
+      mediaInUseCheck = check;
+    },
     onJobTerminal(listener) {
       terminalListeners.push(listener);
     },

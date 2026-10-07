@@ -2,6 +2,7 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { HealthResponse } from '@rs/shared';
 import type { Container } from './container';
+import { createApiLimiter } from './core/api-limiter';
 import type { ConfigService } from './core/config';
 import { getDbState } from './core/db';
 import type { Env } from './core/env';
@@ -34,6 +35,11 @@ export function createApp(deps: AppDeps): Express {
   app.use(container.auth.browserRouter);
   // POST /auth/exchange|refresh|logout and GET /me
   app.use('/api/v1', container.auth.apiRouter);
+
+  // Everything below is authenticated per route (requireAuth) and shares the per-user API rate limit.
+  app.use('/api/v1', createApiLimiter());
+  app.use('/api/v1', container.catalog.router);
+  app.use('/api/v1', container.media.router);
 
   app.get('/health', async (_req, res) => {
     const db = getDbState();

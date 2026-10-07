@@ -29,7 +29,8 @@ async function main(): Promise<void> {
 
   const runsWorker = env.ROLE === 'worker' || env.ROLE === 'all';
   // The HTTP server is already up so /health answers while Mongo is down. The queue starts once Mongo is connected.
-  void connectDbWithRetry(env.MONGODB_URI, logger, { signal: abort.signal }).then(() => {
+  void connectDbWithRetry(env.MONGODB_URI, logger, { signal: abort.signal }).then(async () => {
+    await container.media.ensureIndexes();
     if (runsWorker && !abort.signal.aborted) {
       container.queue.runner.start();
       logger.info({ role: env.ROLE }, 'queue runner started');

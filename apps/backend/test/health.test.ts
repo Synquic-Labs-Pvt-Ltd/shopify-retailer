@@ -46,8 +46,8 @@ describe('error handling', () => {
     expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');
   });
 
-  it('rejects an API call without a bearer token', async () => {
-    const res = await request(app).get('/api/v1/me');
+  it.each(['/api/v1/me', '/api/v1/products', '/api/v1/media?ids=x'])('rejects %s without a bearer token', async (path) => {
+    const res = await request(app).get(path);
     expect(res.status).toBe(401);
     expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');
   });
