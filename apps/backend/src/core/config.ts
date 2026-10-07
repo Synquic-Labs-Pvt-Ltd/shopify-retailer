@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, watch, type FSWatcher } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generationConfigSchema, type GenerationConfig } from '@rs/shared';
+import { generationConfigSchema, laneKey, resolveLaneConfig, type GenerationConfig } from '@rs/shared';
 import type { Logger } from './logger';
 
 export const PROMPT_NAMES = ['planner.system', 'image.user', 'video.user'] as const;
@@ -66,6 +66,17 @@ function stripBom(text: string): string {
   return text.replace(/^﻿/, '');
 }
 
+// The governor refuses every claim for a lane that has no entry, so a model without a lane would stall all of
+// its jobs without any error reaching the app. An edit like that is rejected like any other invalid config.
+function assertLanesCoverModels(config: GenerationConfig): void {
+  const missing = Object.values(config.models)
+    .map((model) => laneKey(config.provider, model))
+    .filter((lane) => resolveLaneConfig(config.lanes, lane) === undefined);
+  if (missing.length > 0) {
+    throw new ConfigError(`Invalid generation config:\n  - lanes: no lane for ${[...new Set(missing)].join(', ')} (add it, or "${config.provider}:*")`);
+  }
+}
+
 export function parseGenerationConfig(raw: string): GenerationConfig {
   let json: unknown;
   try {
@@ -78,6 +89,7 @@ export function parseGenerationConfig(raw: string): GenerationConfig {
     const issues = result.error.issues.map((issue) => `${issue.path.map(String).join('.') || '(root)'}: ${issue.message}`);
     throw new ConfigError(`Invalid generation config:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`);
   }
+  assertLanesCoverModels(result.data);
   return result.data;
 }
 

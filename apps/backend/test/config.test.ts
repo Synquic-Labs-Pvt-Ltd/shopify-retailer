@@ -100,6 +100,28 @@ describe('config loader', () => {
     errorSpy.mockRestore();
   });
 
+  it('rejects a model that has no lane, because its jobs would stall silently', () => {
+    const fixture = createFixture();
+    const service = open(fixture);
+    const orphan = { ...defaultGenerationConfig, models: { ...defaultGenerationConfig.models, image: 'gemini-9-image' } };
+
+    writeFileSync(fixture.configPath, JSON.stringify(orphan));
+    const rejected = service.reload();
+    expect(rejected.ok).toBe(false);
+    expect(rejected.errors.join('\n')).toContain('vertex:gemini-9-image');
+    expect(service.get().models.image).toBe('gemini-2.5-flash-image');
+    expect(() => createConfigService({ logger, ...fixture, watch: false })).toThrow(ConfigError);
+
+    // Adding the lane, or using a provider wildcard lane, makes the same models valid.
+    const lane = defaultGenerationConfig.lanes['vertex:gemini-2.5-flash-image'];
+    if (lane === undefined) throw new Error('the shipped config has no image lane');
+    writeFileSync(fixture.configPath, JSON.stringify({ ...orphan, lanes: { ...orphan.lanes, 'vertex:gemini-9-image': lane } }));
+    expect(service.reload().ok).toBe(true);
+    writeFileSync(fixture.configPath, JSON.stringify({ ...orphan, provider: 'fake' }));
+    expect(service.reload().ok).toBe(true);
+    expect(service.get().provider).toBe('fake');
+  });
+
   it('reloads a valid change on demand', () => {
     const fixture = createFixture();
     const service = open(fixture);
