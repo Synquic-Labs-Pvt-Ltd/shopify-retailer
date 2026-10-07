@@ -110,12 +110,13 @@ async function makeBackend(provider: Provider, cfg: SmokeConfig): Promise<Backen
       modelResourceUrl: (model) => `${base}/${model}`,
     };
   }
-  const project = process.env.GOOGLE_CLOUD_PROJECT;
-  if (!project) throw new Error('GOOGLE_CLOUD_PROJECT is not set');
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     throw new Error('GOOGLE_APPLICATION_CREDENTIALS is not set (path to the service-account JSON)');
   }
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  // The service-account key carries its own project id, so GOOGLE_CLOUD_PROJECT is optional here.
+  const project = process.env.GOOGLE_CLOUD_PROJECT ?? (await auth.getProjectId());
+  console.log(`vertex project=${project}`);
   const loc = (t: Target): string => cfg.locations?.[t] ?? 'us-central1';
   return {
     headers: async () => {
