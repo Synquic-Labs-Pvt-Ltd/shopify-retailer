@@ -351,6 +351,15 @@ describe('lane pause table (SPEC 11.2)', () => {
     expect(withRetryInfo.pausedUntil?.toISOString()).toBe('2026-10-07T12:01:02.000Z');
   });
 
+  it('concurrent failures of one burst of requests escalate the backoff once', async () => {
+    const decisions = await Promise.all(Array.from({ length: 4 }, () => governor.recordFailure('test:lane', failure('rate_limited'))));
+    expect(new Set(decisions.map((decision) => decision.pausedUntil?.getTime())).size).toBe(1);
+    expect(decisions[0]?.pausedUntil?.getTime()).toBe(clock.now().getTime() + 10_000);
+    const state = await LaneStateModel.findById('test:lane').lean();
+    expect(state?.consecutiveRateLimits).toBe(1);
+    expect(state?.pausedUntil?.getTime()).toBe(clock.now().getTime() + 10_000);
+  });
+
   it('daily_quota pauses until the next daily reset of the lane time zone', async () => {
     cfg.lanes['test:la'] = openLane({ dailyResetTimeZone: 'America/Los_Angeles' });
     const la = await governor.recordFailure('test:la', failure('daily_quota'));
