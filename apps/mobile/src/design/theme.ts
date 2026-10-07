@@ -156,7 +156,7 @@ export const pressSpring = { stiffness: 220, damping: 18, mass: 0.7 } as const;
 export const components = {
   press: { hitSlop: 8, retentionOffset: 24, disabledOpacity: 0.5 },
   primaryButton: { padding: 16, approxHeight: 52 },
-  field: { radius: radii.input, borderWidth: borders.outlineWidth },
+  field: { radius: radii.input, borderWidth: borders.outlineWidth, minHeight: 52, paddingX: 16, lockSize: 18 },
   chip: { paddingX: 16, paddingY: 8, borderWidth: borders.outlineWidth },
   filterChips: { height: 38 },
   segmentedControl: { trackPadding: 4 },

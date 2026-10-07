@@ -5,13 +5,16 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from '../api/queryClient';
+import { ToastProvider } from '../design';
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <KeyboardProvider>
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+          <QueryClientProvider client={queryClient}>
+            <ToastProvider>{children}</ToastProvider>
+          </QueryClientProvider>
         </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
