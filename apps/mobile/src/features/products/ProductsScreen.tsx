@@ -25,6 +25,7 @@ import {
 } from '../../design';
 import { useAuthStore } from '../../state/auth';
 import { useDraftHydrated, useDraftStore, type DraftProduct } from '../../state/draft';
+import { useManualRefresh } from '../common/useManualRefresh';
 import { ProductListSkeleton } from './ProductListSkeleton';
 import { ProductRow } from './ProductRow';
 import { tabBarClearance } from './layout';
@@ -47,7 +48,7 @@ export function ProductsScreen() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const query = useProducts(debouncedSearch);
-  const [refreshing, setRefreshing] = useState(false);
+  const { refreshing, onRefresh } = useManualRefresh(query.refetch);
 
   const selection = useDraftStore((state) => state.products);
   const selectedIds = useMemo(() => new Set(selection.map((product) => product.id)), [selection]);
@@ -87,15 +88,6 @@ export function ProductsScreen() {
     const added = missing.slice(0, Math.max(0, maxProducts - draft.products.length));
     draft.setProducts([...draft.products, ...added.map(toDraftProduct)]);
     if (added.length < missing.length) toast.show(`Selection is limited to ${maxProducts} products.`);
-  };
-
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      await query.refetch();
-    } finally {
-      setRefreshing(false);
-    }
   };
 
   const loadMore = () => {
@@ -178,7 +170,7 @@ export function ProductsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void refresh()}
+            onRefresh={onRefresh}
             tintColor={colors.ink}
             colors={[colors.ink]}
           />
