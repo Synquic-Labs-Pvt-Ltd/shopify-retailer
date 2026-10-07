@@ -142,7 +142,7 @@ export function createGovernor(options: RateLimitModuleOptions): Governor {
     }
   };
 
-  const recordFailure = async (lane: string, failure: LaneFailure): Promise<LaneDecision> => {
+  const decideFailure = async (lane: string, failure: LaneFailure): Promise<LaneDecision> => {
     const now = clock();
     const zone = laneConfig(lane)?.dailyResetTimeZone ?? 'UTC';
     if (planPause(failure, now, 0, zone) === null) return { pausedUntil: null };
@@ -179,6 +179,15 @@ export function createGovernor(options: RateLimitModuleOptions): Governor {
     }
     const effective = activeUntil !== null && activeUntil.getTime() > plan.until.getTime() ? activeUntil : plan.until;
     return { pausedUntil: effective };
+  };
+
+  // One lane decides one failure at a time: the 429s of a single burst must not all read "not paused yet" and
+  // escalate the backoff once each. Across instances the extend-only update still keeps the longest pause.
+  const failureTurns = new Map<string, Promise<unknown>>();
+  const recordFailure = (lane: string, failure: LaneFailure): Promise<LaneDecision> => {
+    const turn = (failureTurns.get(lane) ?? Promise.resolve()).then(() => decideFailure(lane, failure));
+    failureTurns.set(lane, turn.catch(() => undefined));
+    return turn;
   };
 
   const recordSuccess = async (lane: string): Promise<void> => {
