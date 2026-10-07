@@ -49,13 +49,14 @@ function buildUrl(path: string, query: Record<string, QueryValue> | undefined): 
   return `${API_BASE_URL}${path}${parts.length > 0 ? `?${parts.join('&')}` : ''}`;
 }
 
-async function fetchOnce(options: RequestOptions): Promise<Response> {
+function currentAccessToken(): string | undefined {
+  return useAuthStore.getState().session?.accessToken;
+}
+
+async function fetchOnce(options: RequestOptions, accessToken: string | undefined): Promise<Response> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
-  if (options.auth !== false) {
-    const token = useAuthStore.getState().session?.accessToken;
-    if (token !== undefined) headers.Authorization = `Bearer ${token}`;
-  }
+  if (options.auth !== false && accessToken !== undefined) headers.Authorization = `Bearer ${accessToken}`;
   try {
     return await fetch(buildUrl(options.path, options.query), {
       method: options.method,
@@ -67,12 +68,17 @@ async function fetchOnce(options: RequestOptions): Promise<Response> {
   }
 }
 
+// On 401 the request is retried exactly once with a new access token. Concurrent 401s share one refresh
+// (the TokenRefresher is single-flight); a request that was sent with an older token than the current one
+// skips the refresh because another request already renewed the session.
 async function execute(options: RequestOptions): Promise<Response> {
-  const response = await fetchOnce(options);
-  if (response.status === 401 && options.auth !== false && (await tokenRefresher.refresh())) {
-    return fetchOnce(options);
-  }
-  return response;
+  const sentToken = options.auth === false ? undefined : currentAccessToken();
+  const response = await fetchOnce(options, sentToken);
+  if (response.status !== 401 || options.auth === false) return response;
+
+  const latest = currentAccessToken();
+  const renewed = latest !== undefined && latest !== sentToken ? true : await tokenRefresher.refresh();
+  return renewed ? fetchOnce(options, currentAccessToken()) : response;
 }
 
 async function readJson(response: Response): Promise<unknown> {
