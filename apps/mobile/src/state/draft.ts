@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { MediaType } from '@rs/shared';
@@ -21,6 +22,10 @@ export interface DraftReference {
   localUri: string;
   filename: string;
   mimeType: string;
+  // Bytes of the file that is uploaded (after HEIC conversion and downscaling).
+  fileSize: number;
+  // Videos only.
+  durationSec: number | null;
   status: DraftReferenceStatus;
   // 0 to 1 while uploading.
   progress: number;
@@ -30,6 +35,8 @@ export interface DraftReference {
 
 interface DraftData {
   idempotencyKey: string;
+  // The shop this draft belongs to; a draft never carries over to another shop.
+  shopId: string | null;
   products: DraftProduct[];
   commonRefs: DraftReference[];
   productRefs: Record<string, DraftReference[]>;
@@ -42,6 +49,8 @@ export interface DraftState extends DraftData {
   addProductRef: (productId: string, ref: DraftReference) => void;
   updateRef: (clientId: string, patch: Partial<DraftReference>) => void;
   removeRef: (clientId: string) => void;
+  // Starts a fresh draft when it belongs to a different shop.
+  bindShop: (shopId: string) => void;
   // Clears everything and issues a new idempotency key (after a batch is created).
   reset: () => void;
 }
@@ -55,11 +64,35 @@ export function newIdempotencyKey(): string {
 }
 
 function emptyDraft(): DraftData {
-  return { idempotencyKey: newIdempotencyKey(), products: [], commonRefs: [], productRefs: {} };
+  return { idempotencyKey: newIdempotencyKey(), shopId: null, products: [], commonRefs: [], productRefs: {} };
 }
 
 function patchRefs(refs: DraftReference[], clientId: string, patch: Partial<DraftReference>): DraftReference[] {
   return refs.map((ref) => (ref.clientId === clientId ? { ...ref, ...patch } : ref));
+}
+
+const INTERRUPTED_MESSAGE = 'The upload was interrupted.';
+
+// An upload cannot outlive the app process: whatever was mid-upload at the last save needs a retry.
+function settleInterrupted(refs: DraftReference[]): DraftReference[] {
+  return refs.map((ref) =>
+    ref.status === 'uploading' ? { ...ref, status: 'failed', progress: 0, error: INTERRUPTED_MESSAGE } : ref,
+  );
+}
+
+function restoreDraft(persisted: unknown, current: DraftState): DraftState {
+  if (typeof persisted !== 'object' || persisted === null) return current;
+  const saved = persisted as Partial<DraftData>;
+  return {
+    ...current,
+    idempotencyKey: saved.idempotencyKey ?? current.idempotencyKey,
+    shopId: saved.shopId ?? null,
+    products: saved.products ?? [],
+    commonRefs: settleInterrupted(saved.commonRefs ?? []),
+    productRefs: Object.fromEntries(
+      Object.entries(saved.productRefs ?? {}).map(([id, refs]) => [id, settleInterrupted(refs)]),
+    ),
+  };
 }
 
 export const useDraftStore = create<DraftState>()(
@@ -92,18 +125,38 @@ export const useDraftStore = create<DraftState>()(
             Object.entries(state.productRefs).map(([id, refs]) => [id, refs.filter((ref) => ref.clientId !== clientId)]),
           ),
         })),
-      reset: () => set(emptyDraft()),
+      bindShop: (shopId) =>
+        set((state) => (state.shopId === shopId ? state : { ...emptyDraft(), shopId })),
+      reset: () => set((state) => ({ ...emptyDraft(), shopId: state.shopId })),
     }),
     {
       name: 'rs-draft',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state): DraftData => ({
         idempotencyKey: state.idempotencyKey,
+        shopId: state.shopId,
         products: state.products,
         commonRefs: state.commonRefs,
         productRefs: state.productRefs,
       }),
+      // Version 1 drafts predate the feature screens and carried no uploads worth keeping.
+      migrate: () => emptyDraft(),
+      merge: restoreDraft,
     },
   ),
 );
+
+// True once the persisted draft has been read from AsyncStorage.
+export function useDraftHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(() => useDraftStore.persist.hasHydrated());
+  useEffect(() => {
+    setHydrated(useDraftStore.persist.hasHydrated());
+    return useDraftStore.persist.onFinishHydration(() => setHydrated(true));
+  }, []);
+  return hydrated;
+}
+
+export function allDraftRefs(state: DraftData): DraftReference[] {
+  return [...state.commonRefs, ...Object.values(state.productRefs).flat()];
+}
