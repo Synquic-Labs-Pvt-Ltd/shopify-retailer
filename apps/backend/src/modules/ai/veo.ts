@@ -1,4 +1,4 @@
-import type { AiResult, ClassifiedError, VideoOperation } from './index';
+import type { AiResult, ClassifiedError, VideoOperation, VideoSubmitRequest } from './index';
 import { classifyOperationError, makeAiError } from './errors';
 import { asList, asString, isRecord, type JsonRecord } from './json';
 
@@ -6,6 +6,18 @@ import { asList, asString, isRecord, type JsonRecord } from './json';
 
 // Reference-image mode takes at most three asset images.
 export const MAX_REFERENCE_IMAGES = 3;
+
+// referenceImages and startImage select different Veo modes and cannot be combined.
+export function validateVideoInputs(request: VideoSubmitRequest): ClassifiedError | null {
+  if (request.startImage !== undefined && request.referenceImages.length > 0) {
+    return makeAiError(
+      'invalid_request',
+      'A video request takes either referenceImages (reference mode) or startImage (image-to-video), not both',
+      { providerReason: 'conflicting_video_inputs' },
+    );
+  }
+  return null;
+}
 
 export function parseSubmitResponse(json: unknown): AiResult<VideoOperation> {
   const name = isRecord(json) ? asString(json.name) : null;

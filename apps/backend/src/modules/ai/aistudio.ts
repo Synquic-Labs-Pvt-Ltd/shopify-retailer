@@ -3,7 +3,7 @@ import { makeAiError } from './errors';
 import { createGeminiContentApi, type PreparedCall } from './gemini-core';
 import { requestBytes, requestJson, type HttpContext } from './http';
 import { asList, asString, fromBase64, isRecord, toBase64, type JsonRecord } from './json';
-import { MAX_REFERENCE_IMAGES, parseSubmitResponse, raiFilteredError, readOperation, readRaiFilter } from './veo';
+import { MAX_REFERENCE_IMAGES, parseSubmitResponse, raiFilteredError, readOperation, readRaiFilter, validateVideoInputs } from './veo';
 
 // Google AI Studio (Gemini API) REST adapter. Auth is the x-goog-api-key header.
 
@@ -22,13 +22,25 @@ export interface AiStudioDeps {
 // video per request is possible, so sampleCount is not sent either. Image objects use bytesBase64Encoded
 // plus mimeType, the form google-genai sends for this endpoint. The Veo REST reference also shows an
 // inlineData form; if a deployment ever rejects this one, that is the alternative.
-function buildSubmitBody(request: VideoSubmitRequest): JsonRecord {
+// Reference mode sends referenceImages of type asset; image-to-video sends the start image as
+// instances[0].image (the first frame) and no referenceImages.
+function buildInstance(request: VideoSubmitRequest): JsonRecord {
+  if (request.startImage !== undefined) {
+    return {
+      prompt: request.prompt,
+      image: { bytesBase64Encoded: toBase64(request.startImage.data), mimeType: request.startImage.mimeType },
+    };
+  }
   const referenceImages = request.referenceImages.slice(0, MAX_REFERENCE_IMAGES).map((image) => ({
     image: { bytesBase64Encoded: toBase64(image.data), mimeType: image.mimeType },
     referenceType: 'asset',
   }));
+  return { prompt: request.prompt, ...(referenceImages.length > 0 ? { referenceImages } : {}) };
+}
+
+function buildSubmitBody(request: VideoSubmitRequest): JsonRecord {
   return {
-    instances: [{ prompt: request.prompt, ...(referenceImages.length > 0 ? { referenceImages } : {}) }],
+    instances: [buildInstance(request)],
     parameters: {
       aspectRatio: request.aspectRatio,
       durationSeconds: request.durationSeconds,
@@ -85,6 +97,8 @@ export function createAiStudioProvider(deps: AiStudioDeps): AiProvider {
     generateImage: content.generateImage,
 
     async submitVideo(request) {
+      const conflict = validateVideoInputs(request);
+      if (conflict !== null) return { ok: false, error: conflict };
       const prepared = await prepare(request, 'predictLongRunning');
       if (!prepared.ok) return prepared;
       const response = await requestJson(http, {

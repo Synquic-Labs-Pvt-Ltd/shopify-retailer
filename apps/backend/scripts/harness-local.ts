@@ -17,6 +17,10 @@
  *   --images <n>        image shots to generate. Default: outputs.imagesPerProduct from the config.
  *   --videos <n>        video shots to generate. Default: outputs.videosPerProduct from the config.
  *   --no-video          skip the video step even when videos > 0.
+ *   --video-mode <m>    reference_images or image_to_video. Default: video.mode from the config. In
+ *                       image_to_video mode the first product image is the first frame (and durationSeconds
+ *                       may be 4, 6 or 8 in the config); in reference_images mode up to 3 product images are
+ *                       sent as Veo reference assets (8 seconds).
  *   --latency-ms <n>    fake provider latency. Default 0 here (the config default is 3000).
  *
  * Output: plan.json, image-<n>.<ext>, video-<n>.mp4, prompts/*.txt and summary.json. Exit code 1 when any
@@ -26,7 +30,16 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileS
 import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCreativePlanSchema, type AiProviderName, type CreativePlan, type GenerationConfig, type ProductSnapshot } from '@rs/shared';
+import {
+  VIDEO_MODES,
+  createCreativePlanSchema,
+  videoConfigSchema,
+  type AiProviderName,
+  type CreativePlan,
+  type GenerationConfig,
+  type ProductSnapshot,
+  type VideoMode,
+} from '@rs/shared';
 import { createConfigService, type ConfigService } from '../src/core/config';
 import { loadDotEnv, parseEnv, type Env } from '../src/core/env';
 import { createLogger } from '../src/core/logger';
@@ -41,6 +54,7 @@ import {
   type ClassifiedError,
   type ImageInput,
   type ReferenceVideoInput,
+  type VideoSubmitRequest,
 } from '../src/modules/ai';
 
 export interface HarnessOptions {
@@ -52,6 +66,7 @@ export interface HarnessOptions {
   images?: number;
   videos?: number;
   skipVideo?: boolean;
+  videoMode?: VideoMode;
   latencyMs?: number;
   // Test hooks.
   env?: Pick<Env, 'GOOGLE_CLOUD_PROJECT' | 'GEMINI_API_KEY'>;
@@ -107,13 +122,26 @@ function describeError(error: ClassifiedError): string {
   return lines.join('\n');
 }
 
+// Reference mode sends up to 3 product images as reference assets; image-to-video sends the first as the first frame.
+export function videoImageInputs(config: GenerationConfig, productImages: ImageInput[]): Pick<VideoSubmitRequest, 'referenceImages' | 'startImage'> {
+  const first = productImages[0];
+  if (config.video.mode === 'image_to_video' && first !== undefined) return { referenceImages: [], startImage: first };
+  return { referenceImages: productImages.slice(0, config.ai.image.maxProductImages) };
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
 function applyOverrides(config: GenerationConfig, options: HarnessOptions): GenerationConfig {
   const provider = options.provider ?? 'fake';
+  const video = { ...config.video, mode: options.videoMode ?? config.video.mode };
+  const checked = videoConfigSchema.safeParse(video);
+  if (!checked.success) {
+    throw new Error(`Invalid video settings for mode ${video.mode}: ${checked.error.issues.map((issue) => issue.message).join('; ')}`);
+  }
   return {
     ...config,
     provider,
+    video,
     outputs: {
       imagesPerProduct: options.images ?? config.outputs.imagesPerProduct,
       videosPerProduct: options.skipVideo === true ? 0 : (options.videos ?? config.outputs.videosPerProduct),
@@ -158,7 +186,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     imageUrls: [],
   };
 
-  log(`provider=${config.provider} images=${counts.imageCount} videos=${counts.videoCount} out=${outDir}`);
+  log(`provider=${config.provider} images=${counts.imageCount} videos=${counts.videoCount} videoMode=${config.video.mode} out=${outDir}`);
 
   // 1. Plan. A failed or invalid plan falls back to the deterministic plan, as the generation module does.
   const systemPrompt = renderPlannerSystemPrompt(configService.getPrompt('planner.system').text, counts, config);
@@ -223,7 +251,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
       signal: AbortSignal.timeout(TIMEOUT_MS.submit),
       prompt,
       negativePrompt: config.video.negativePrompt,
-      referenceImages: productImages.slice(0, config.ai.image.maxProductImages),
+      ...videoImageInputs(config, productImages),
       durationSeconds: config.video.durationSeconds,
       aspectRatio: config.video.aspectRatio,
       resolution: config.video.resolution,
@@ -259,6 +287,10 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   return { outDir, planSource, files, failures };
 }
 
+function isVideoMode(value: string): value is VideoMode {
+  return (VIDEO_MODES as readonly string[]).includes(value);
+}
+
 export function parseHarnessArgs(argv: string[]): HarnessOptions {
   const values = new Map<string, string>();
   const flags = new Set<string>();
@@ -291,6 +323,10 @@ export function parseHarnessArgs(argv: string[]): HarnessOptions {
   const images = number('images');
   const videos = number('videos');
   const latencyMs = number('latency-ms');
+  const videoMode = values.get('video-mode');
+  if (videoMode !== undefined && !isVideoMode(videoMode)) {
+    throw new Error(`--video-mode must be one of ${VIDEO_MODES.join(', ')}`);
+  }
   return {
     productsDir,
     provider,
@@ -301,6 +337,7 @@ export function parseHarnessArgs(argv: string[]): HarnessOptions {
     ...(images === undefined ? {} : { images }),
     ...(videos === undefined ? {} : { videos }),
     ...(latencyMs === undefined ? {} : { latencyMs }),
+    ...(videoMode === undefined ? {} : { videoMode }),
   };
 }
 

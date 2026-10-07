@@ -321,6 +321,54 @@ describe('vertex video', () => {
   });
 });
 
+describe('vertex image-to-video', () => {
+  const startImage = { mimeType: 'image/png', data: bytes(7, 8, 9) };
+
+  it('sends the start image as the instance image, with no referenceImages', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: 'op-i2v' }));
+    const result = await provider.submitVideo(videoRequest({ referenceImages: [], startImage, durationSeconds: 6 }));
+
+    expect(calls[0]?.url).toBe(
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/test-proj/locations/us-central1/publishers/google/models/veo-3.1-generate-001:predictLongRunning',
+    );
+    expect(calls[0]?.body).toEqual({
+      instances: [{ prompt: 'A lamp glows.', image: { bytesBase64Encoded: b64(bytes(7, 8, 9)), mimeType: 'image/png' } }],
+      parameters: {
+        aspectRatio: '9:16',
+        durationSeconds: 6,
+        resolution: '720p',
+        generateAudio: false,
+        personGeneration: 'allow_adult',
+        sampleCount: 1,
+        negativePrompt: 'text, watermark',
+      },
+    });
+    expect(at(calls[0]?.body, 'instances', 0, 'referenceImages')).toBeUndefined();
+    expect(result).toEqual({ ok: true, value: { operationName: 'op-i2v' } });
+  });
+
+  it.each([4, 6, 8])('passes a %s second duration through unchanged', async (durationSeconds) => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: 'op' }));
+    await provider.submitVideo(videoRequest({ referenceImages: [], startImage, durationSeconds, aspectRatio: '16:9' }));
+    expect(at(calls[0]?.body, 'parameters', 'durationSeconds')).toBe(durationSeconds);
+    expect(at(calls[0]?.body, 'parameters', 'aspectRatio')).toBe('16:9');
+  });
+
+  it('rejects referenceImages together with a start image without calling the network', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: 'op' }));
+    const result = await provider.submitVideo(videoRequest({ startImage }));
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid_request', providerReason: 'conflicting_video_inputs', retryable: false } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('still sends reference images when no start image is given', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: 'op' }));
+    await provider.submitVideo(videoRequest());
+    expect(at(calls[0]?.body, 'instances', 0, 'image')).toBeUndefined();
+    expect(at(calls[0]?.body, 'instances', 0, 'referenceImages')).toHaveLength(1);
+  });
+});
+
 describe('vertex failures never throw', () => {
   it('classifies a 429 from the raw body, keeps Retry-After, and logs the full body', async () => {
     const { provider, log } = setup(() => jsonResponse(429, fixtureText('429-per-minute-retryinfo.json'), { 'retry-after': '30' }));

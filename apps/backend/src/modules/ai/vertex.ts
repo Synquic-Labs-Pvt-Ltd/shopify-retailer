@@ -3,7 +3,7 @@ import { classifyTransportError, makeAiError } from './errors';
 import { createGeminiContentApi, type PreparedCall } from './gemini-core';
 import { requestJson, type HttpContext } from './http';
 import { asList, asString, fromBase64, isRecord, toBase64, type JsonRecord } from './json';
-import { MAX_REFERENCE_IMAGES, parseSubmitResponse, raiFilteredError, readOperation, readRaiFilter } from './veo';
+import { MAX_REFERENCE_IMAGES, parseSubmitResponse, raiFilteredError, readOperation, readRaiFilter, validateVideoInputs } from './veo';
 
 // Vertex AI REST adapter. Auth is an OAuth token for the cloud-platform scope; the URL depends on the
 // per-model location, and "global" has its own host (SPEC 13, locations).
@@ -39,13 +39,25 @@ function classifyTokenError(err: unknown) {
   return makeAiError('auth_error', `Could not obtain a Google access token: ${message}`, { providerReason: 'token_error' });
 }
 
-function buildSubmitBody(request: VideoSubmitRequest): JsonRecord {
+// Reference mode sends referenceImages of type asset; image-to-video sends the start image as instances[0].image
+// (the first frame) and no referenceImages.
+function buildInstance(request: VideoSubmitRequest): JsonRecord {
+  if (request.startImage !== undefined) {
+    return {
+      prompt: request.prompt,
+      image: { bytesBase64Encoded: toBase64(request.startImage.data), mimeType: request.startImage.mimeType },
+    };
+  }
   const referenceImages = request.referenceImages.slice(0, MAX_REFERENCE_IMAGES).map((image) => ({
     image: { bytesBase64Encoded: toBase64(image.data), mimeType: image.mimeType },
     referenceType: 'asset',
   }));
+  return { prompt: request.prompt, ...(referenceImages.length > 0 ? { referenceImages } : {}) };
+}
+
+function buildSubmitBody(request: VideoSubmitRequest): JsonRecord {
   return {
-    instances: [{ prompt: request.prompt, ...(referenceImages.length > 0 ? { referenceImages } : {}) }],
+    instances: [buildInstance(request)],
     parameters: {
       aspectRatio: request.aspectRatio,
       durationSeconds: request.durationSeconds,
@@ -129,6 +141,8 @@ export function createVertexProvider(deps: VertexDeps): AiProvider {
     generateImage: content.generateImage,
 
     async submitVideo(request) {
+      const conflict = validateVideoInputs(request);
+      if (conflict !== null) return { ok: false, error: conflict };
       const prepared = await prepare(request, 'predictLongRunning');
       if (!prepared.ok) return prepared;
       const response = await requestJson(http, {
