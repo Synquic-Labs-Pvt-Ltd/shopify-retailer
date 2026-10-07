@@ -59,12 +59,12 @@ Not related to Trendzo or ClosetX in any way: no shared code, branding, names, a
 
 | Layer | Choice |
 |---|---|
-| Monorepo | pnpm workspaces plus Turborepo 2. .npmrc sets node-linker=hoisted for React Native compatibility. |
-| Language | TypeScript (strict) everywhere. |
-| Shared contracts | packages/shared: zod schemas for every API request and response, enums, the generation config schema, and inferred TS types. |
-| Backend | Node.js 22 LTS or newer, Express 5, Mongoose, zod, pino logging, jose (JWT), google-auth-library (Vertex auth), native fetch for REST calls. |
-| Backend tests | vitest, supertest, mongodb-memory-server. |
-| Mobile | Expo (latest stable SDK, 56 or newer) as a dev build, not Expo Go. React Navigation 7: native-stack plus bottom-tabs with a custom floating tab bar. |
+| Monorepo | pnpm 12 workspaces plus Turborepo 2. .npmrc sets node-linker=hoisted for React Native compatibility. Dependency install scripts are denied by default; the allowlist lives in pnpm-workspace.yaml. |
+| Language | TypeScript 6 (strict) everywhere. |
+| Shared contracts | packages/shared: zod 4 schemas for every API request and response, enums, the generation config schema, and inferred TS types. Consumed as TypeScript source, with no build step. |
+| Backend | Node.js 22 LTS or newer, Express 5, Mongoose 9, zod 4, pino logging, jose (JWT), google-auth-library (Vertex auth), native fetch for REST calls. Runs through tsx; the build script is the type check. |
+| Backend tests | vitest 5 (with the transform cache enabled), supertest, mongodb-memory-server. |
+| Mobile | Expo SDK 57 (React Native 0.86, React 19.2) as a dev build, not Expo Go. React Navigation 7: native-stack plus bottom-tabs with a custom floating tab bar. |
 | Mobile state | TanStack Query 5 for server state. zustand 5, persisted to AsyncStorage, for the generation draft. |
 | Mobile libs | expo-web-browser, expo-linking, expo-secure-store, expo-image-picker, expo-image-manipulator, expo-file-system, expo-media-library, expo-sharing, expo-video, expo-image, expo-haptics, expo-font with Inter, @expo/vector-icons (Ionicons), react-native-reanimated 4, react-native-gesture-handler, react-native-safe-area-context, react-native-keyboard-controller. |
 | Queue | A custom MongoDB-backed queue in the backend (section 11). It is free and needs no Redis. BullMQ was rejected because it needs Redis and has no hour or day windows; Agenda was rejected because it has no lane-aware rate gating. |
@@ -289,9 +289,12 @@ Shopify recommends the authorization code grant for non-embedded and standalone 
 
 ### 10.4 Video job
 - Picks shot videoShots[outputIndex] from the plan.
-- Default mode is reference images: up to 3 product images passed as referenceImages of type asset, plus the rendered video prompt (section 12.4) and the negativePrompt from config.
+- The mode comes from video.mode in the batch config snapshot.
+  - reference_images (default): up to 3 product images passed as referenceImages of type asset, plus the rendered video prompt (section 12.4) and the negativePrompt from config. Google documents this mode as 8 seconds only, and a forum report says it may accept 16:9 only. Verify 9:16 in Phase 3 and switch the mode or the aspect ratio in the config if it is rejected.
+  - image_to_video: the first product image is sent as the first frame (startImage) and no referenceImages. Duration may be 4, 6 or 8 seconds.
+  - The two inputs are mutually exclusive; sending both is a classified invalid_request without a network call.
 - Parameters from config:
-  - durationSeconds: 8 (required by reference-image mode)
+  - durationSeconds: 8 (required by reference_images mode and by 1080p; 4, 6 or 8 in image_to_video mode)
   - aspectRatio: 9:16
   - resolution: 720p
   - generateAudio: false
@@ -496,7 +499,8 @@ The negativePrompt comes from config video.negativePrompt. Default: "text, capti
 | ai.planner.maxReferenceImages | 6 | |
 | ai.planner.maxReferenceVideos | 2 | |
 | ai.planner.temperature | 0.6 | |
-| video.durationSeconds | 8 | Must be 8 in reference-image mode. |
+| video.mode | "reference_images" | reference_images or image_to_video (section 10.4). Live reloadable and frozen into each batch snapshot. |
+| video.durationSeconds | 8 | 4, 6 or 8. Must be 8 in reference_images mode and at 1080p. |
 | video.aspectRatio | "9:16" | 9:16 or 16:9. |
 | video.resolution | "720p" | 720p or 1080p. |
 | video.generateAudio | false | |
@@ -1106,12 +1110,14 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 - Fairness scheduling beyond the per-shop caps.
 
 ## 24. Verify during Phase 0 and Phase 3 (facts that may drift)
-- Exact Vertex model IDs and their availability in the chosen location: planner text model, image model, Veo GA and fast variants, and whether the fast variant supports reference images.
-- Vertex Veo returns inline video bytes when no storageUri is set.
-- Vertex accepts public HTTPS Shopify CDN URLs as fileData for reference videos. If not, use the inline fallback (section 10.2).
-- Vertex image output options for JPEG.
-- SHOPIFY_API_VERSION is the latest stable version. The staged upload parameters for VIDEO resources.
-- Expiring offline token refresh request format.
+Status as of the end of the build phases (2026-10-07):
+- Open until a real Vertex run: exact Vertex model IDs and their availability in the chosen location (planner text model, image model, Veo GA and fast variants), and whether the fast variant supports reference images. The first smoke run authenticated successfully but the Vertex AI API was disabled on the project, so nothing was confirmed.
+- Open: Vertex Veo returns inline video bytes when no storageUri is set. If only a gs:// URI comes back, the adapter returns a clear invalid_request.
+- Open: Veo reference images at 9:16 (see section 10.4), and image-to-video at 9:16 with a 3:4 start frame (Vertex has a resizeMode of pad or crop that is not sent).
+- Open: Vertex accepts public HTTPS Shopify CDN URLs as fileData for reference videos. If not, the inline fallback in section 10.2 applies.
+- Open: Vertex image output options for JPEG, and imageSize on the chosen image model. The adapter retries once without them when a 400 names them.
+- Verified against current Shopify docs: SHOPIFY_API_VERSION 2026-10 is the latest stable; the offline exchange takes expiring=1 and refresh is the refresh_token grant (a 401 is terminal); the staged resource for images is IMAGE and fileSize is a string required for VIDEO; file statuses are UPLOADED, PROCESSING, READY, FAILED; fileDelete is synchronous.
+- Not verified against a live store: the nodes(ids) status query with inline fragments, wildcard title search, and whether the real VIDEO staged target accepts the server-side multipart POST.
 
 ## 25. External references
 - Shopify, expiring offline access tokens: https://shopify.dev/changelog/expiring-offline-access-tokens-required-for-public-apps-april-1-2026
@@ -1123,3 +1129,46 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 - Gemini API rate limits: https://ai.google.dev/gemini-api/docs/rate-limits
 - Vertex model versions: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
 - Expo monorepos: https://docs.expo.dev/guides/monorepos/
+
+## 26. As built: deviations and additions (cycle 1)
+This section records where the implementation differs from the text above or adds to it. Update the earlier sections when a deviation becomes permanent.
+
+### Auth and Shopify
+- POST /auth/logout does not require a bearer token, so an expired access token cannot block logout.
+- If the OAuth callback fails after the state was validated and a mobile app is waiting, the backend redirects to the app deep link with an error parameter instead of showing a browser error page. An install started from the landing page (no PKCE challenge) ends on an HTML "installed" page and skips the online phase.
+- A rotated refresh token that is presented again revokes its whole family. Two concurrent refreshes with the same token therefore log the user out, so the client sends refreshes one at a time with a shared in-flight promise.
+- A webhook delivery still being processed gets a 503 so Shopify retries. A failed delivery's idempotency record is deleted so the retry is processed from scratch. Upstream Shopify failures return code internal with HTTP 502; exhausting the THROTTLED retries returns too_many_requests.
+- A fresh offline exchange retires older tokens, so refresh results are saved compare-and-set on the refresh token that was used.
+- The per-user API limit (300 per minute) is keyed by a fingerprint of the bearer token, with the client IP as the fallback, and applies to every authenticated route after the auth routes.
+
+### Catalog and media
+- Product search turns each word into a title wildcard and escapes special characters, so user input can never become a filter or operator. At most 8 terms.
+- Product images are read through media(first: 5, query media_type:IMAGE) and featuredMedia, because Product.images is deprecated.
+- Media records are written after stagedUploadsCreate succeeds, so a Shopify failure leaves no orphan rows. durationSec is required for video uploads. Size limits are treated as MiB. Video.duration from Shopify is in milliseconds and is converted to seconds. fileCreate requires the filename extension to match the staged source, so the same generated filename goes to both calls.
+- persistOutput tolerates two consecutive failed status queries while polling, and a timed-out upload keeps its record so a retry resumes polling instead of uploading again. It rejects with a typed error (code shopify_upload_failed, with a retryable flag).
+- The per-request file-count limit is checked per upload call; the per-batch caps are enforced by the batches module.
+
+### Queue and rate governor
+- Jobs carry an extra requeuedAt field, set by retry-failed, so the maximum job age counts from the requeue.
+- The rate_limited pause is 10 seconds times 2 to the power of the number of previous consecutive failures, capped at 300 seconds for the exponential term only, so a larger provider RetryInfo delay is honoured. A 429 that arrives while the lane is already paused does not escalate the counter.
+- The effective limit is the floor of the limit times the safety factor, with a minimum of 1. A lane with no configuration is denied (logged once a minute) instead of running unthrottled.
+- A granted acquire returns the windows it took, so release returns the token to the original window even if the minute rolled over.
+- The concurrency gate is a count query and is not atomic with the claim, so two racing instances can overshoot a lane's maxConcurrent by one. Counter windows and claims are fully atomic.
+- A defer outcome carries an optional lane failure and an optional runAt; without either it is requeued after the base backoff. no_output is retried once by the runner.
+
+### AI
+- The provider classifier adds: 404 model not found, FAILED_PRECONDITION and 402 as provider_unavailable; API_KEY_INVALID as auth_error; and a message heuristic for Responsible AI blocks reported as plain 400s as safety_blocked. A prepaid-credits RESOURCE_EXHAUSTED is provider_unavailable, never rate_limited.
+- AI Studio uses a different Veo model id from Vertex, so models.video must be changed when provider is aistudio. AI Studio lane defaults are not provided.
+- The fake provider's video is a non-decodable MP4 stub and its image is a tiny JPEG or an echo of the first input image; neither passes real Shopify file processing.
+
+### Batches and generation
+- Item and batch counters and statuses are recomputed from the jobs on every report, cancel and retry, ordered by a per-batch ticket, instead of being incremented. A batch only becomes terminal once all of its jobs exist.
+- A failed plan job does not downgrade an item whose outputs all succeeded with the fallback plan. retry-failed refuses a cancelled batch and a non-terminal batch. A replayed idempotent create returns 201. A batch whose creation failed part-way is marked failed.
+- Uninstall cancels every batch of the shop in addition to its jobs. Invalid planner JSON is a retry with code no_output, after which the fallback plan takes over. A product with no images fails its jobs with invalid_request before any provider call.
+- Extra batch fields: coverImageUrl, statsSeq, statsApplied; extra item field: statsApplied.
+
+### Mobile
+- The login footer links come from optional EXPO_PUBLIC_PRIVACY_URL, EXPO_PUBLIC_TERMS_URL and EXPO_PUBLIC_SUPPORT_URL. Log out has no confirmation.
+- The draft store is versioned; a persisted uploading slot returns as failed after an app kill, and processing slots resume polling.
+- Mock mode (EXPO_PUBLIC_API_MOCK=true) serves every endpoint, including a batch that advances over time with a delay banner and one failed video.
+- Device-only behaviour is unverified: camera, HEIC conversion, the real upload to a Shopify staged target, pinch zoom, video playback, gallery saves and the share sheet. If Android destroys the activity while the camera is open, the picked file is lost.
