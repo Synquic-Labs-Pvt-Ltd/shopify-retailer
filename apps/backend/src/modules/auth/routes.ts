@@ -66,14 +66,13 @@ export function createAuthRouters(deps: AuthRoutesDeps): AuthRouters {
   });
 
   const browserRouter = Router();
-  browserRouter.use(noStore);
 
-  browserRouter.get('/auth/shopify/start', limiter, async (req, res) => {
+  browserRouter.get('/auth/shopify/start', noStore, limiter, async (req, res) => {
     const query = parseWith(startQuerySchema, req.query);
     res.redirect(302, await flow.start(parseShopInput(query.shop), query.challenge));
   });
 
-  browserRouter.get('/auth/shopify/callback', limiter, async (req, res) => {
+  browserRouter.get('/auth/shopify/callback', noStore, limiter, async (req, res) => {
     const query = parseWith(shopifyCallbackQuerySchema, req.query);
     const result = await flow.callback(rawQuery(req), query);
     if (result.kind === 'redirect') {
@@ -84,7 +83,7 @@ export function createAuthRouters(deps: AuthRoutesDeps): AuthRouters {
   });
 
   // App URL: Shopify opens it after install or from the admin (SPEC 8.3 step 8).
-  browserRouter.get('/', async (req, res) => {
+  browserRouter.get('/', noStore, async (req, res) => {
     const query = parseWith(shopifyLandingQuerySchema, req.query);
     if (!verifyOAuthQueryHmac(rawQuery(req), env.SHOPIFY_API_SECRET)) {
       throw AppError.forbidden('Invalid request signature');
@@ -98,23 +97,22 @@ export function createAuthRouters(deps: AuthRoutesDeps): AuthRouters {
   });
 
   const apiRouter = Router();
-  apiRouter.use(noStore);
 
-  apiRouter.post('/auth/exchange', limiter, async (req, res) => {
+  apiRouter.post('/auth/exchange', noStore, limiter, async (req, res) => {
     res.json(await sessions.exchange(parseWith(authExchangeRequestSchema, req.body)));
   });
 
-  apiRouter.post('/auth/refresh', limiter, async (req, res) => {
+  apiRouter.post('/auth/refresh', noStore, limiter, async (req, res) => {
     res.json(await sessions.refresh(parseWith(authRefreshRequestSchema, req.body).refreshToken));
   });
 
   // The refresh token is the credential, so an expired access token must not block logout.
-  apiRouter.post('/auth/logout', limiter, async (req, res) => {
+  apiRouter.post('/auth/logout', noStore, limiter, async (req, res) => {
     await sessions.logout(parseWith(authLogoutRequestSchema, req.body).refreshToken);
     res.status(204).end();
   });
 
-  apiRouter.get('/me', requireAuth, async (req, res) => {
+  apiRouter.get('/me', noStore, requireAuth, async (req, res) => {
     const { auth } = req as AuthenticatedRequest;
     const [user, shop] = await Promise.all([UserModel.findById(auth.userId).lean<UserDoc>(), shops.getById(auth.shopId)]);
     if (user === null || shop === null) throw AppError.unauthorized();
