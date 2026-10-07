@@ -7,7 +7,7 @@ import { FAKE_JPEG } from '../../src/modules/ai/fake-media';
 import { BatchModel } from '../../src/modules/batches/models';
 import { MediaAssetModel } from '../../src/modules/media/models';
 import { JobModel } from '../../src/modules/queue/models';
-import { commonImageSpec, createBatch, defined, errorOf, getBatch, login, uploadReadyReferences, type ApiClient } from './support/client';
+import { commonImageSpec, createBatch, defined, errorOf, getBatch, login, uploadReadyReferences, waitMediaSettled, type ApiClient } from './support/client';
 import { MONGO_START_TIMEOUT_MS, startE2e, type E2e } from './support/harness';
 
 const SHOP_A = 'alpha-store.myshopify.com';
@@ -151,6 +151,45 @@ describe('reference resolution (SPEC 9)', () => {
     const duplicate = await createBatch(alpha, { products: [{ productGid: gid(0) }, { productGid: gid(0) }], commonReferenceMediaIds: [alphaImage.id] });
     expect(duplicate.status).toBe(400);
     expect((await request(e2e.app).post('/api/v1/batches').send({})).status).toBe(401);
+  });
+});
+
+describe('uploading references', () => {
+  const upload = (files: object[]) => alpha.post('/api/v1/media/uploads', { files });
+  const image = (overrides: object = {}) => ({ clientId: 'x', filename: 'x.jpg', mimeType: 'image/jpeg', fileSize: 1000, scope: 'common', ...overrides });
+
+  it('reports every problem of a request by client id', async () => {
+    const res = await upload([
+      image({ clientId: 'gif', mimeType: 'image/gif' }),
+      image({ clientId: 'huge', fileSize: 21 * 1024 * 1024 }),
+      { ...image({ clientId: 'clip', mimeType: 'video/mp4', filename: 'clip.mp4' }) },
+      image({ clientId: 'clip-long', mimeType: 'video/mp4', filename: 'long.mp4', durationSec: 61 }),
+      image({ clientId: 'gif' }),
+    ]);
+    expect(res.status).toBe(400);
+    const problems = (errorOf(res).details as { files: { clientId: string; code: string }[] }).files.map((problem) => `${problem.clientId}:${problem.code}`);
+    expect(problems.sort()).toEqual(['clip-long:video_too_long', 'clip:duration_required', 'gif:duplicate_client_id', 'gif:unsupported_mime_type', 'huge:file_too_large']);
+    expect((await upload([image({ scope: 'product' })])).status).toBe(400);
+    expect((await upload([])).status).toBe(400);
+    expect(await MediaAssetModel.countDocuments({ filename: { $regex: /^rs-ref-/ }, status: 'awaiting_upload' })).toBe(1);
+  });
+
+  it('fails a reference that was completed without its bytes, and can still delete it', async () => {
+    const staged = await upload([image({ clientId: 'empty', fileSize: FAKE_JPEG.byteLength })]);
+    const mediaId = defined(uploadsResponseSchema.parse(staged.body).targets[0]).mediaId;
+    const first = await alpha.post(`/api/v1/media/${mediaId}/complete`);
+    const second = await alpha.post(`/api/v1/media/${mediaId}/complete`);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(second.body.status).toBe('processing');
+    expect(e2e.stub.graphqlOperations(SHOP_A).filter((operation) => operation === 'FileCreate').length).toBeGreaterThan(0);
+
+    const settled = await waitMediaSettled(alpha, [mediaId]);
+    expect(settled[0]?.status).toBe('failed');
+    expect((await MediaAssetModel.findById(mediaId).lean())?.error).toMatchObject({ code: 'INVALID_IMAGE_SOURCE_URL' });
+    const asReference = await createBatch(alpha, { products: [{ productGid: gid(2) }], commonReferenceMediaIds: [mediaId] });
+    expect(asReference.status).toBe(400);
+    expect((await alpha.delete(`/api/v1/media/${mediaId}`)).status).toBe(204);
+    expect((await alpha.post(`/api/v1/media/${mediaId}/complete`)).status).toBe(404);
   });
 });
 

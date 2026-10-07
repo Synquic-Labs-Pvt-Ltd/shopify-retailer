@@ -78,6 +78,8 @@ export interface E2e {
 export interface StartOptions {
   dbName?: string;
   config?: (config: GenerationConfig) => void;
+  // Keep the shipped queue settings and lanes (only the provider becomes "fake"), for tests on real timings.
+  shippedTimings?: boolean;
 }
 
 export async function startE2e(options: StartOptions = {}): Promise<E2e> {
@@ -102,7 +104,8 @@ export async function startE2e(options: StartOptions = {}): Promise<E2e> {
   const configPath = join(directory, 'generation.config.json');
   const promptsDir = join(directory, 'prompts');
   cpSync(DEFAULT_PROMPTS_DIR, promptsDir, { recursive: true });
-  const initial = e2eConfig(parseGenerationConfig(readFileSync(DEFAULT_CONFIG_PATH, 'utf8')));
+  const shipped = parseGenerationConfig(readFileSync(DEFAULT_CONFIG_PATH, 'utf8'));
+  const initial = options.shippedTimings === true ? { ...shipped, provider: 'fake' as const } : e2eConfig(shipped);
   options.config?.(initial);
   writeFileSync(configPath, JSON.stringify(initial, null, 2));
 

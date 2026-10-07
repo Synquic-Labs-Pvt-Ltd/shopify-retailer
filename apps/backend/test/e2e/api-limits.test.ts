@@ -83,6 +83,42 @@ describe('HTTP behaviour of the whole app', () => {
   });
 });
 
+describe('garbage in, errors out', () => {
+  const objectIds = Array.from({ length: 51 }, () => '0'.repeat(24)).join(',');
+  const cases: [string, string, number, unknown?][] = [
+    ['get', '/api/v1/products?limit=abc', 400],
+    ['get', `/api/v1/products?q=${'x'.repeat(300)}`, 400],
+    ['get', '/api/v1/products/not-a-gid', 400],
+    ['get', `/api/v1/products/${encodeURIComponent('gid://shopify/Product/abc')}`, 400],
+    ['get', '/api/v1/batches/zzz', 400],
+    ['post', '/api/v1/batches/zzz/cancel', 400],
+    ['post', '/api/v1/batches/zzz/retry-failed', 400],
+    ['get', '/api/v1/media', 400],
+    ['get', '/api/v1/media?ids=zzz', 400],
+    ['get', `/api/v1/media?ids=${objectIds}`, 400],
+    ['post', '/api/v1/media/zzz/complete', 400],
+    ['delete', '/api/v1/media/zzz', 400],
+    ['post', '/api/v1/media/uploads', 400, [1, 2, 3]],
+    ['post', '/api/v1/media/uploads', 400, { files: 'nope' }],
+    ['post', '/api/v1/batches', 400, 'just a string'],
+    ['post', '/api/v1/auth/refresh', 400, {}],
+    ['post', '/api/v1/auth/refresh', 400, { refreshToken: 'x'.repeat(600) }],
+    ['post', '/api/v1/auth/exchange', 400, { code: 'a', codeVerifier: 'short', platform: 'android' }],
+    ['post', '/api/v1/auth/exchange', 400, { code: 'a', codeVerifier: 'v'.repeat(43), platform: 'windows' }],
+    ['get', '/auth/shopify/callback', 400],
+    ['get', '/auth/shopify/start?shop=%00&challenge=x', 400],
+    ['put', '/api/v1/batches', 404],
+    ['get', '/api/v1/%E2%98%83', 404],
+  ];
+
+  it.each(cases)('%s %s answers %i with the error envelope', async (method, path, status, body) => {
+    const call = withNewIp(request(e2e.app)[method as 'get'](path)).set('authorization', `Bearer ${client.session.accessToken}`);
+    const res = await (body === undefined ? call : call.send(body as object | string));
+    expect(res.status).toBe(status);
+    expect(['validation_failed', 'not_found']).toContain(errorOf(res).code);
+  });
+});
+
 describe('Shopify Admin API failures', () => {
   it('waits out THROTTLED answers and gives up after three retries', async () => {
     e2e.stub.state.knobs.throttle = { operation: 'ProductList', remaining: 2 };
