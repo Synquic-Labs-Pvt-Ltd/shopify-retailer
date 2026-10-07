@@ -1155,6 +1155,7 @@ This section records where the implementation differs from the text above or add
 - A granted acquire returns the windows it took, so release returns the token to the original window even if the minute rolled over.
 - The concurrency gate is a count query and is not atomic with the claim, so two racing instances can overshoot a lane's maxConcurrent by one. Counter windows and claims are fully atomic.
 - A defer outcome carries an optional lane failure and an optional runAt; without either it is requeued after the base backoff. no_output is retried once by the runner.
+- The per-call budgets of section 11.1 apply to the whole handler call, not only the provider request, because the handlers also download inputs and store the output in Shopify Files. The shipped budgets are plan 120 seconds, image 300 seconds, video submit 90 seconds and poll 660 seconds, so a slow Shopify file processing step does not abort a finished generation.
 
 ### AI
 - The provider classifier adds: 404 model not found, FAILED_PRECONDITION and 402 as provider_unavailable; API_KEY_INVALID as auth_error; and a message heuristic for Responsible AI blocks reported as plain 400s as safety_blocked. A prepaid-credits RESOURCE_EXHAUSTED is provider_unavailable, never rate_limited.
@@ -1166,6 +1167,7 @@ This section records where the implementation differs from the text above or add
 - A failed plan job does not downgrade an item whose outputs all succeeded with the fallback plan. retry-failed refuses a cancelled batch and a non-terminal batch. A replayed idempotent create returns 201. A batch whose creation failed part-way is marked failed.
 - Uninstall cancels every batch of the shop in addition to its jobs. Invalid planner JSON is a retry with code no_output, after which the fallback plan takes over. A product with no images fails its jobs with invalid_request before any provider call.
 - Extra batch fields: coverImageUrl, statsSeq, statsApplied; extra item field: statsApplied.
+- When a finished Veo operation cannot be stored in Shopify, the video job polls the same operation again (bounded by videoMaxWaitMinutes) instead of submitting a new video, because the operation is already billed. If waiting cannot help (Shopify rejected the file, or the shop must log in again) the job fails. Image jobs still retry by regenerating.
 
 ### Mobile
 - The login footer links come from optional EXPO_PUBLIC_PRIVACY_URL, EXPO_PUBLIC_TERMS_URL and EXPO_PUBLIC_SUPPORT_URL. Log out has no confirmation.

@@ -60,7 +60,7 @@ export interface FakeMedia extends Pick<MediaService, 'getAssets' | 'getObjects'
   persisted: PersistOutputInput[];
   addReference(spec: ReferenceSpec): string;
   // Makes the next persistOutput calls throw.
-  persistFailures: { count: number };
+  persistFailures: { count: number; error?: Error };
 }
 
 function toObject(asset: MediaAssetRecord): MediaObject {
@@ -86,7 +86,7 @@ export function createFakeMedia(now: () => Date): FakeMedia {
   const assets = new Map<string, MediaAssetRecord>();
   const bySourceJob = new Map<string, MediaAssetRecord>();
   const persisted: PersistOutputInput[] = [];
-  const persistFailures = { count: 0 };
+  const persistFailures: { count: number; error?: Error } = { count: 0 };
 
   const ownedBy = (shopId: string, ids: string[]): MediaAssetRecord[] =>
     ids.flatMap((id) => {
@@ -153,7 +153,7 @@ export function createFakeMedia(now: () => Date): FakeMedia {
         if (existing !== undefined) return toObject(existing);
         if (persistFailures.count > 0) {
           persistFailures.count -= 1;
-          throw new Error('Shopify file upload failed');
+          throw persistFailures.error ?? new Error('Shopify file upload failed');
         }
         persisted.push(input);
         const id = new Types.ObjectId().toHexString();

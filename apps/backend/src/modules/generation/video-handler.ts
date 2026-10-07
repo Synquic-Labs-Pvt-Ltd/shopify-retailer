@@ -108,7 +108,12 @@ async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promi
     bytes: polled.value.video.bytes,
     shotTitle: shot?.title ?? 'Video',
   });
-  if (!stored.ok) return stored.outcome;
+  // The operation is already paid for and its result stays fetchable, so a storage hiccup polls the same
+  // operation again (bounded by videoMaxWaitMinutes) instead of submitting, and paying for, a new video.
+  // A failure that waiting cannot fix (Shopify rejected the file, the shop must log in again) fails the job.
+  if (!stored.ok) {
+    return stored.outcome.error.retryable ? awaiting(rt, operationName) : { kind: 'failed', error: stored.outcome.error };
+  }
   return {
     kind: 'succeeded',
     output: { mediaAssetId: stored.media.id, providerResponseId: operationName, modelVersion: polled.value.modelVersion },

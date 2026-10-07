@@ -4,7 +4,7 @@ import type { LoadedPrompt, PromptName } from '../../core/config';
 import type { Logger } from '../../core/logger';
 import { buildFallbackPlan, type AiService, type ImageInput } from '../ai';
 import type { BatchItemContext, BatchesService } from '../batches';
-import type { MediaAssetRecord, MediaService } from '../media';
+import { StorageUploadError, type MediaAssetRecord, type MediaService } from '../media';
 import type { JobOutcome, QueueJob } from '../queue';
 import { DownloadError, downloadBytes } from './download';
 import { failure } from './outcomes';
@@ -156,7 +156,8 @@ export interface OutputToPersist {
 
 export type PersistResult = { ok: true; media: MediaObject } | { ok: false; outcome: Extract<JobOutcome, { kind: 'retry' }> };
 
-// Idempotent per job (the storage driver looks up sourceJobId first). A storage failure is a retry.
+// Idempotent per job (the storage driver looks up sourceJobId first). A storage failure is a retry outcome
+// whose error.retryable says whether waiting can help; the video handler uses that to avoid polling forever.
 export async function persistOutput(rt: Runtime, output: OutputToPersist): Promise<PersistResult> {
   const { job, ctx } = output;
   try {
@@ -178,6 +179,9 @@ export async function persistOutput(rt: Runtime, output: OutputToPersist): Promi
   } catch (err) {
     rt.logger.warn({ err, jobId: job.id, type: job.type }, 'persisting an output failed');
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, outcome: { kind: 'retry', error: failure('shopify_upload_failed', `Could not store the output: ${message}`, true) } };
+    // Shopify refusing the file, or the shop needing to log in again, will not change by waiting.
+    const needsLogin = err instanceof Error && err.cause instanceof AppError && err.cause.code === 'shop_reauth_required';
+    const retryable = !needsLogin && (!(err instanceof StorageUploadError) || err.retryable);
+    return { ok: false, outcome: { kind: 'retry', error: failure('shopify_upload_failed', `Could not store the output: ${message}`, retryable) } };
   }
 }

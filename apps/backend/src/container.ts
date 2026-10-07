@@ -64,6 +64,9 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     getConfig,
     governor: rateLimit.governor,
     logger,
+    // The handlers also download inputs and store the output in Shopify Files (an upload plus up to 2 minutes
+    // for an image, up to 10 minutes for a video to process), so these budgets are larger than the provider calls.
+    callTimeoutsMs: { plan: 120_000, image: 300_000, videoSubmit: 90_000, poll: 660_000 },
     onTerminal: async (job) => {
       await late.batches?.service.reportJobFinished(job);
     },

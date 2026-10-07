@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AiPart } from '../../src/modules/ai';
+import { StorageUploadError } from '../../src/modules/media';
 import { BatchItemModel } from '../../src/modules/batches/models';
 import { JobModel } from '../../src/modules/queue/models';
 import { MONGO_START_TIMEOUT_MS, startTestMongo, type TestMongo } from '../helpers/mongo';
@@ -283,5 +284,40 @@ describe('video handler (SPEC 10.4)', () => {
     expect(first?.operationName).toBe(second?.operationName);
     expect(third?.operationName).not.toBe(first?.operationName);
     expect(await JobModel.findOne({ batchId, type: 'video' }).lean()).toMatchObject({ status: 'succeeded', attempts: 2 });
+  });
+
+  it('polls a finished operation again when storing the video fails, instead of paying for a new video', async () => {
+    const ref = kit.reference();
+    const { batchId } = await createWithRefs([], [ref]);
+    // The first poll that reports the operation done is followed by one failing upload.
+    kit.ai.hooks.poll = (_request, call) => {
+      if (call === 2) kit.media.persistFailures.count = 1;
+      return undefined;
+    };
+    const done = await kit.driveToTerminal(batchId);
+    expect(done.status).toBe('completed');
+    expect(kit.ai.calls.submit).toHaveLength(1);
+    const names = new Set(kit.ai.calls.poll.map((call) => call.operationName));
+    expect(names.size).toBe(1);
+    expect(await JobModel.findOne({ batchId, type: 'video' }).lean()).toMatchObject({ status: 'succeeded', attempts: 1 });
+  });
+
+  it('fails the job when Shopify refuses the upload outright, without resubmitting', async () => {
+    const ref = kit.reference();
+    const { batchId } = await createWithRefs([], [ref]);
+    kit.ai.hooks.poll = (_request, call) => {
+      if (call === 2) {
+        kit.media.persistFailures.count = 1;
+        kit.media.persistFailures.error = new StorageUploadError('Shopify rejected the file', false);
+      }
+      return undefined;
+    };
+    const done = await kit.driveToTerminal(batchId);
+    expect(done.status).toBe('completed_with_errors');
+    expect(kit.ai.calls.submit).toHaveLength(1);
+    expect(await JobModel.findOne({ batchId, type: 'video' }).lean()).toMatchObject({
+      status: 'failed',
+      error: { code: 'shopify_upload_failed', retryable: false },
+    });
   });
 });
