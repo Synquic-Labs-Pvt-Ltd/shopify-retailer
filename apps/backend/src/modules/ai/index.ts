@@ -68,7 +68,13 @@ export interface ImageResponse {
 export interface VideoSubmitRequest extends ModelTarget {
   prompt: string;
   negativePrompt: string;
+  // Reference-image mode (video.mode "reference_images"): up to 3 images sent as Veo reference assets.
   referenceImages: { mimeType: string; data: Uint8Array }[];
+  // Image-to-video mode (video.mode "image_to_video"): sent as the first frame, with no referenceImages.
+  // Mutually exclusive with a non-empty referenceImages: providing both returns invalid_request without
+  // calling the provider. Pass referenceImages: [] when using startImage.
+  startImage?: { mimeType: string; data: Uint8Array };
+  // 8 in reference-image mode; 4, 6 or 8 in image-to-video mode (1080p needs 8).
   durationSeconds: number;
   aspectRatio: VideoAspectRatio;
   resolution: VideoResolution;

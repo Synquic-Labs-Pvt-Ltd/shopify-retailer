@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseHarnessArgs, runHarness } from '../../scripts/harness-local';
+import { defaultGenerationConfig, type GenerationConfig } from '@rs/shared';
+import { parseHarnessArgs, runHarness, videoImageInputs } from '../../scripts/harness-local';
 import { FAKE_JPEG } from '../../src/modules/ai/fake-media';
 
 const cleanups: string[] = [];
@@ -72,9 +73,39 @@ describe('harness-local', () => {
     expect(messages.join('\n')).toMatch(/using the deterministic fallback plan/);
   });
 
+  it('runs image-to-video mode through the fake provider', async () => {
+    const messages: string[] = [];
+    const result = await runHarness({ ...quiet, log: (line) => messages.push(line), productsDir: productFolder(), outDir: join(tempDir(), 'out'), images: 1, videos: 1, videoMode: 'image_to_video' });
+    expect(result.failures).toEqual([]);
+    expect(result.files).toContain('video-1.mp4');
+    expect(messages[0]).toContain('videoMode=image_to_video');
+  });
+
+  it('takes the video mode from the config when the option is absent', async () => {
+    const messages: string[] = [];
+    await runHarness({ ...quiet, log: (line) => messages.push(line), productsDir: productFolder(), outDir: join(tempDir(), 'out'), images: 0, videos: 0 });
+    expect(messages[0]).toContain('videoMode=reference_images');
+  });
+
   it('rejects a folder without images', async () => {
     const empty = tempDir();
     await expect(runHarness({ ...quiet, productsDir: empty })).rejects.toThrow(/No product images/);
+  });
+});
+
+describe('videoImageInputs', () => {
+  const img = (n: number) => ({ mimeType: 'image/jpeg', data: new Uint8Array([n]) });
+  const images = [img(1), img(2), img(3), img(4)];
+  const withMode = (mode: GenerationConfig['video']['mode']): GenerationConfig => ({ ...defaultGenerationConfig, video: { ...defaultGenerationConfig.video, mode } });
+
+  it('sends up to the cap of product images as references in reference_images mode', () => {
+    const inputs = videoImageInputs(withMode('reference_images'), images);
+    expect(inputs.referenceImages).toEqual(images.slice(0, 3));
+    expect(inputs.startImage).toBeUndefined();
+  });
+
+  it('sends only the first product image as the start image in image_to_video mode', () => {
+    expect(videoImageInputs(withMode('image_to_video'), images)).toEqual({ referenceImages: [], startImage: images[0] });
   });
 });
 
@@ -91,6 +122,12 @@ describe('parseHarnessArgs', () => {
       outDir: 'o',
       title: 'T',
     });
+  });
+
+  it('parses and validates --video-mode', () => {
+    expect(parseHarnessArgs(['--products', 'p', '--video-mode', 'image_to_video']).videoMode).toBe('image_to_video');
+    expect(parseHarnessArgs(['--products', 'p']).videoMode).toBeUndefined();
+    expect(() => parseHarnessArgs(['--products', 'p', '--video-mode', 'text'])).toThrow(/--video-mode must be one of/);
   });
 
   it('defaults to the fake provider', () => {

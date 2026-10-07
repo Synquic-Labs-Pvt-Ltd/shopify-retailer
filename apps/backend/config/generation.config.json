@@ -32,6 +32,7 @@
     }
   },
   "video": {
+    "mode": "reference_images",
     "durationSeconds": 8,
     "aspectRatio": "9:16",
     "resolution": "720p",

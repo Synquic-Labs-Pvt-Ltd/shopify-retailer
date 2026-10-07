@@ -4,6 +4,7 @@ import type { Logger } from '../../core/logger';
 import type { AiPart, AiProvider, AiResult, ClassifiedError } from './index';
 import { classifyAiError, classifyTransportError } from './errors';
 import { FAKE_JPEG, FAKE_MP4 } from './fake-media';
+import { validateVideoInputs } from './veo';
 
 // Fake provider for development and tests: no network, no credits. Latency and the share of simulated
 // 429s come from the live config (fake.latencyMs, fake.rateLimitProbability).
@@ -164,12 +165,16 @@ export function createFakeProvider(deps: FakeDeps): AiProvider {
         };
       }),
 
-    submitVideo: (request) =>
-      simulate(request.signal, true, () => {
+    // Accepts either video mode (referenceImages or startImage) but enforces the same exclusivity as the real adapters.
+    submitVideo: async (request) => {
+      const conflict = validateVideoInputs(request);
+      if (conflict !== null) return { ok: false, error: conflict };
+      return simulate(request.signal, true, () => {
         const operationName = `fake/operations/${randomUUID()}`;
         polls.set(operationName, 0);
         return { operationName };
-      }),
+      });
+    },
 
     pollVideo: (request) =>
       simulate(request.signal, true, () => {

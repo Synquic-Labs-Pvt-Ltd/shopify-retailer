@@ -142,6 +142,11 @@ export type VideoAspectRatio = (typeof VIDEO_ASPECT_RATIOS)[number];
 export const VIDEO_RESOLUTIONS = ['720p', '1080p'] as const;
 export type VideoResolution = (typeof VIDEO_RESOLUTIONS)[number];
 
+// How Veo is fed the product images (SPEC 10.4): up to 3 as reference "asset" images (default), or the
+// first product image as the first frame of an image-to-video request.
+export const VIDEO_MODES = ['reference_images', 'image_to_video'] as const;
+export type VideoMode = (typeof VIDEO_MODES)[number];
+
 export const PERSON_GENERATION_MODES = ['allow_adult', 'dont_allow'] as const;
 export type PersonGenerationMode = (typeof PERSON_GENERATION_MODES)[number];
 

@@ -141,6 +141,18 @@ describe('fake provider', () => {
     }
   });
 
+  it('accepts either video mode but not both inputs at once', async () => {
+    const { provider } = create(configWith({ latencyMs: 0 }));
+    const image = { mimeType: 'image/jpeg', data: bytes(1) };
+    expect((await provider.submitVideo({ ...videoRequest(), referenceImages: [image] })).ok).toBe(true);
+    expect((await provider.submitVideo({ ...videoRequest(), startImage: image, durationSeconds: 4 })).ok).toBe(true);
+    expect((await provider.submitVideo({ ...videoRequest(), referenceImages: [] })).ok).toBe(true);
+    expect(await provider.submitVideo({ ...videoRequest(), referenceImages: [image], startImage: image })).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid_request', providerReason: 'conflicting_video_inputs' },
+    });
+  });
+
   it('tracks operations independently', async () => {
     const { provider } = create(configWith({ latencyMs: 0 }));
     const one = await provider.submitVideo(videoRequest());

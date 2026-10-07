@@ -209,6 +209,43 @@ describe('aistudio video', () => {
   });
 });
 
+describe('aistudio image-to-video', () => {
+  const startImage = { mimeType: 'image/png', data: bytes(7, 8, 9) };
+
+  it('sends the start image as the instance image, with no referenceImages', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: OPERATION }));
+    const result = await provider.submitVideo({ ...videoRequest(), referenceImages: [], startImage, durationSeconds: 4 });
+
+    expect(calls[0]?.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning');
+    expect(calls[0]?.headers['x-goog-api-key']).toBe(API_KEY);
+    expect(calls[0]?.body).toEqual({
+      instances: [{ prompt: 'A lamp glows.', image: { bytesBase64Encoded: b64(bytes(7, 8, 9)), mimeType: 'image/png' } }],
+      parameters: { aspectRatio: '9:16', durationSeconds: 4, resolution: '720p', personGeneration: 'allow_adult', negativePrompt: 'text, watermark' },
+    });
+    expect(result).toEqual({ ok: true, value: { operationName: OPERATION } });
+  });
+
+  it.each([4, 6, 8])('passes a %s second duration through unchanged', async (durationSeconds) => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: OPERATION }));
+    await provider.submitVideo({ ...videoRequest(), referenceImages: [], startImage, durationSeconds });
+    expect(at(calls[0]?.body, 'parameters', 'durationSeconds')).toBe(durationSeconds);
+  });
+
+  it('rejects referenceImages together with a start image without calling the network', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, { name: OPERATION }));
+    const result = await provider.submitVideo({ ...videoRequest(), startImage });
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid_request', providerReason: 'conflicting_video_inputs', retryable: false } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('checks the conflict before the credentials', async () => {
+    const { provider, calls } = setup(() => jsonResponse(200, {}), { apiKey: undefined });
+    const result = await provider.submitVideo({ ...videoRequest(), startImage });
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid_request' } });
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe('aistudio credentials', () => {
   it('returns auth_error without calling the API when the key is missing', async () => {
     const { provider, calls } = setup(() => jsonResponse(200, {}), { apiKey: undefined });
