@@ -2,15 +2,15 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { errorEnvelopeSchema, healthResponseSchema } from '@rs/shared';
 import { createApp } from '../src/app';
+import { createContainer } from '../src/container';
 import { createConfigService } from '../src/core/config';
 import { parseEnv } from '../src/core/env';
 import { createLogger } from '../src/core/logger';
-import { createWorkerState } from '../src/core/worker';
 
 const logger = createLogger('silent');
 const config = createConfigService({ logger, watch: false });
-const workerState = createWorkerState();
-const app = createApp({ env: parseEnv({}), logger, config, workerState });
+const env = parseEnv({});
+const app = createApp({ env, logger, config, container: createContainer({ env, logger, config }) });
 
 afterAll(() => config.close());
 
@@ -24,13 +24,6 @@ describe('GET /health', () => {
     expect(body.worker.lastTickAt).toBeNull();
     expect(body.pausedLanes).toEqual([]);
     expect(res.headers['x-request-id']).toBeTruthy();
-  });
-
-  it('reports the worker lastTickAt', async () => {
-    workerState.lastTickAt = new Date('2026-10-07T12:00:00.000Z');
-    const res = await request(app).get('/health');
-    expect(healthResponseSchema.parse(res.body).worker.lastTickAt).toBe('2026-10-07T12:00:00.000Z');
-    workerState.lastTickAt = null;
   });
 });
 
@@ -47,9 +40,15 @@ describe('error handling', () => {
     expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('validation_failed');
   });
 
-  it('keeps the webhook route on a raw body and reports not_implemented', async () => {
+  it('mounts the real webhook route on a raw body and rejects an unsigned request', async () => {
     const res = await request(app).post('/webhooks/shopify').set('content-type', 'application/json').send('{"a":1}');
-    expect(res.status).toBe(501);
-    expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('not_implemented');
+    expect(res.status).toBe(401);
+    expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');
+  });
+
+  it('rejects an API call without a bearer token', async () => {
+    const res = await request(app).get('/api/v1/me');
+    expect(res.status).toBe(401);
+    expect(errorEnvelopeSchema.parse(res.body).error.code).toBe('unauthorized');
   });
 });

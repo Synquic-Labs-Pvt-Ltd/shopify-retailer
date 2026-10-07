@@ -1,40 +1,60 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { HealthResponse } from '@rs/shared';
+import type { Container } from './container';
 import type { ConfigService } from './core/config';
 import { getDbState } from './core/db';
 import type { Env } from './core/env';
-import { AppError, createErrorHandler, notFoundHandler } from './core/errors';
+import { createErrorHandler, notFoundHandler } from './core/errors';
 import { requestLogger } from './core/http';
 import type { Logger } from './core/logger';
-import type { WorkerState } from './core/worker';
 
 export interface AppDeps {
   env: Env;
   logger: Logger;
   config: ConfigService;
-  workerState: WorkerState;
+  container: Container;
 }
 
 export function createApp(deps: AppDeps): Express {
+  const { container } = deps;
   const app = express();
 
+  // Behind a reverse proxy or tunnel the client IP comes from X-Forwarded-For (auth rate limiting).
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(requestLogger(deps.logger));
 
-  // Webhooks need the raw body for HMAC verification, so this route is registered before express.json.
-  app.post('/webhooks/shopify', express.raw({ type: '*/*', limit: '1mb' }), (_req, _res, next) => {
-    next(AppError.notImplemented('Shopify webhooks are not implemented yet'));
-  });
+  // Webhooks bring their own raw body parser for HMAC verification, so they are mounted before express.json.
+  app.use(container.shopify.webhookRouter);
 
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/health', (_req, res) => {
+  // GET /, /auth/shopify/start, /auth/shopify/callback
+  app.use(container.auth.browserRouter);
+  // POST /auth/exchange|refresh|logout and GET /me
+  app.use('/api/v1', container.auth.apiRouter);
+
+  app.get('/health', async (_req, res) => {
+    const db = getDbState();
+    let pausedLanes: HealthResponse['pausedLanes'] = [];
+    if (db === 'connected') {
+      try {
+        const paused = await container.rateLimit.governor.listPaused();
+        pausedLanes = paused.map((lane) => ({
+          lane: lane.lane,
+          reason: lane.reason,
+          pausedUntil: lane.pausedUntil.toISOString(),
+        }));
+      } catch (err) {
+        deps.logger.error({ err }, 'health: cannot list paused lanes');
+      }
+    }
     const body: HealthResponse = {
       ok: true,
-      db: getDbState(),
-      worker: { lastTickAt: deps.workerState.lastTickAt?.toISOString() ?? null },
-      pausedLanes: [],
+      db,
+      worker: { lastTickAt: container.queue.runner.lastTickAt?.toISOString() ?? null },
+      pausedLanes,
     };
     res.json(body);
   });
