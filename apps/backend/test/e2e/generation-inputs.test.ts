@@ -171,6 +171,25 @@ describe('what the provider receives for a product with own and common reference
     vi.restoreAllMocks();
   }, 90_000);
 
+  it('still works when every reference is a video: the image model gets the product images only', async () => {
+    const provider = e2e.container.ai.getProvider('fake');
+    const plan = vi.spyOn(provider, 'plan');
+    const image = vi.spyOn(provider, 'generateImage');
+    const res = await createBatch(client, { products: [{ productGid: defined(gids[2]) }], commonReferenceMediaIds: ids('v1', 'v2') });
+    const batchId = batchSummarySchema.parse(res.body).id;
+    expect((await e2e.driveBatch(batchId, { timeoutMs: 60_000 })).status).toBe('completed');
+    await e2e.settle();
+
+    const planned = defined(plan.mock.calls[0]?.[0]).parts.map(describePart);
+    expect(planned.filter((part) => part.startsWith('file:'))).toEqual([`file:video/mp4:${ref('v1').url}`, `file:video/mp4:${ref('v2').url}`]);
+    expect(planned.some((part) => part.includes('STYLE REFERENCE IMAGE'))).toBe(false);
+    for (const [call] of image.mock.calls) {
+      expect(call.parts.slice(0, -1).map(describePart).filter((part) => part.includes('STYLE REFERENCE'))).toEqual([]);
+      expect(call.parts.filter((part) => part.kind === 'inlineData')).toHaveLength(3);
+    }
+    vi.restoreAllMocks();
+  }, 90_000);
+
   it('sends reference videos inline when the provider rejects their urls, and skips the ones over 20 MB', async () => {
     const big = videoSpec('big', 'common', undefined, new Uint8Array(21 * 1024 * 1024));
     const [bigVideo] = await uploadReadyReferences(client, [big]);

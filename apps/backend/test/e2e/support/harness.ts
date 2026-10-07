@@ -16,6 +16,8 @@ import { MONGO_START_TIMEOUT_MS, startTestMongo, type TestMongo } from '../../he
 import { createShopifyStub, type ShopifyStub } from './shopify-stub';
 import { sleep } from './wait';
 
+// End to end harness: the real container and app on an in-memory Mongo, with Shopify and the CDN stubbed at the
+// global fetch (see shopify-stub.ts) and the fake AI provider. The queue is driven by tickOnce(), never by timers.
 export { MONGO_START_TIMEOUT_MS };
 
 export const PUBLIC_BASE_URL = 'https://studio.example.com';

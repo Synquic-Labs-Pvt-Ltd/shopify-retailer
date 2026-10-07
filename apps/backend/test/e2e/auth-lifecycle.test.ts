@@ -11,6 +11,7 @@ import { MONGO_START_TIMEOUT_MS, startE2e, type E2e } from './support/harness';
 
 const SHOP = 'auth-store.myshopify.com';
 const FRESH_SHOP = 'fresh-store.myshopify.com';
+const DECLINED_SHOP = 'declined-store.myshopify.com';
 const SECRET = 'e2e-api-secret';
 
 let e2e: E2e;
@@ -19,6 +20,7 @@ beforeAll(async () => {
   e2e = await startE2e({ dbName: 'rs_e2e_auth' });
   e2e.stub.addShop(SHOP);
   e2e.stub.addShop(FRESH_SHOP);
+  e2e.stub.addShop(DECLINED_SHOP);
 }, MONGO_START_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -55,6 +57,22 @@ describe('the browser flow rejects what Shopify would not send', () => {
     const otherShop = `/auth/shopify/callback?${signedQueryString({ code: 'x', shop: FRESH_SHOP, state: flow.state, timestamp: '1760000000' }, SECRET)}`;
     expect((await get(otherShop)).status).toBe(403);
     expect((await get(`/auth/shopify/callback?${signedQueryString({ code: 'x', shop: SHOP, state: 'unknown-state', timestamp: '1760000000' }, SECRET)}`)).status).toBe(403);
+  });
+
+  it('hands the app an error code instead of a browser error page when the exchange fails', async () => {
+    const rejectedCode = await startFlow(SHOP);
+    const callback = `/auth/shopify/callback?${signedQueryString({ code: 'code_never_issued', shop: SHOP, state: rejectedCode.state, timestamp: '1760000000' }, SECRET)}`;
+    const res = await get(callback);
+    expect(res.status).toBe(302);
+    expect(String(res.headers.location)).toBe('retailerstudio://auth?error=forbidden');
+  });
+
+  it('does not install a shop whose merchant granted fewer scopes than required', async () => {
+    const flow = await startFlow(DECLINED_SHOP);
+    const declined = await get(e2e.stub.approve(flow.authorizeUrl, { scope: 'read_products' }));
+    expect(declined.status).toBe(302);
+    expect(String(declined.headers.location)).toBe('retailerstudio://auth?error=forbidden');
+    expect(await ShopModel.findOne({ shopDomain: DECLINED_SHOP }).lean()).toBeNull();
   });
 
   it('rejects an invalid shop domain and a missing or malformed challenge', async () => {
@@ -251,6 +269,8 @@ describe('Shopify offline token refresh through the API', () => {
       'refresh token rotated concurrently, session family revoked',
       'shop requires re-authorization',
       'login code presented with a wrong PKCE verifier',
+      'Shopify rejected the authorization code',
+      'oauth callback failed',
     ];
     expect(e2e.problems(expected)).toEqual([]);
   });
