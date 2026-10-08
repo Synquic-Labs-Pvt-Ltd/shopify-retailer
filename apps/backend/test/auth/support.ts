@@ -7,6 +7,7 @@ import { parseEnv, type Env } from '../../src/core/env';
 import { createLogger } from '../../src/core/logger';
 import { createAuthModule, type AuthModule } from '../../src/modules/auth';
 import { createShopsModule, type ShopsInternalService } from '../../src/modules/shops';
+import { signSessionToken, type SessionTokenSpec } from '../helpers/session-token';
 import { createFakeShopify, type ApproveOptions, type FakeShopify } from '../shopify/fake-shopify';
 
 export const SHOP = 'demo-store.myshopify.com';
@@ -34,7 +35,12 @@ export function createClock(): Clock {
 export function createHarness(options: { rateLimitPerMinute?: number; envOverrides?: Record<string, string> } = {}): Harness {
   const env = parseEnv({ PUBLIC_BASE_URL: 'https://studio.example.com', ...options.envOverrides });
   const clock = createClock();
-  const fake = createFakeShopify({ apiKey: env.SHOPIFY_API_KEY, apiSecret: env.SHOPIFY_API_SECRET, apiVersion: env.SHOPIFY_API_VERSION });
+  const fake = createFakeShopify({
+    apiKey: env.SHOPIFY_API_KEY,
+    apiSecret: env.SHOPIFY_API_SECRET,
+    apiVersion: env.SHOPIFY_API_VERSION,
+    now: clock.now,
+  });
   const shops = createShopsModule({ env, logger, fetchImpl: fake.fetchImpl, now: clock.now, lockPollMs: 10 }).service;
   const auth = createAuthModule({
     env,
@@ -53,6 +59,17 @@ export function createHarness(options: { rateLimitPerMinute?: number; envOverrid
   app.use(notFoundHandler);
   app.use(createErrorHandler(logger));
   return { app, env, clock, shops, auth, fake };
+}
+
+// A Shopify App Bridge session token for the harness's app, minted on the harness clock.
+export function sessionToken(harness: Harness, spec: Partial<SessionTokenSpec> = {}): Promise<string> {
+  return signSessionToken({
+    shop: SHOP,
+    apiKey: harness.env.SHOPIFY_API_KEY,
+    apiSecret: harness.env.SHOPIFY_API_SECRET,
+    at: harness.clock.now().getTime(),
+    ...spec,
+  });
 }
 
 export interface Pkce {

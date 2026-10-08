@@ -20,9 +20,18 @@ export interface AuthContext {
 export type AuthenticatedRequest = Request & { auth: AuthContext };
 
 export interface AuthService {
-  // Verifies the bearer JWT, loads the shop and sets req.auth. 401 unauthorized, 409 shop_reauth_required.
+  // Authenticates the bearer token and sets req.auth. Two kinds are accepted:
+  //  - our access JWT (mobile): verified, then the shop must be active;
+  //  - a Shopify App Bridge session token (embedded web app): verified, then the shop gets an offline token through a
+  //    token exchange if it has none, and the staff user is mapped to a users document.
+  // 401 unauthorized, 409 shop_reauth_required, 502 when Shopify cannot be reached during an exchange.
   requireAuth: RequestHandler;
+  // Our access JWT only.
   verifyAccessToken(token: string): Promise<AuthContext>;
+  // Key for per-user throttling: user:<shopId>:<userId> for our JWT, shop:<domain>:<Shopify user id> for a session
+  // token, null for anything else. Signature checks only (no database, no token exchange), so a forged or unsigned
+  // token never gets a key and the caller falls back to the client IP.
+  rateLimitKey(req: Request): Promise<string | null>;
   // app/uninstalled: revokes every session of the shop.
   revokeAllSessions(shopId: string): Promise<void>;
   // shop/redact: deletes users, sessions, login codes and oauth states of the shop.
@@ -57,7 +66,13 @@ export function createAuthModule(deps: AuthModuleDeps): AuthModule {
 
   const jwt = createJwtService(env.JWT_SECRET, now);
   const sessions = createSessionService({ logger, shops, jwt, now });
-  const service = createAuthService({ shops, jwt, sessions });
+  const service = createAuthService({
+    shops,
+    jwt,
+    sessions,
+    shopify: { apiKey: env.SHOPIFY_API_KEY, apiSecret: env.SHOPIFY_API_SECRET },
+    now,
+  });
   const flow = createOAuthFlow({
     env,
     logger,
