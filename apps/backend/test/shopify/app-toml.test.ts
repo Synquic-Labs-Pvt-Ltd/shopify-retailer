@@ -42,7 +42,9 @@ describe.each([
   it('subscribes the uninstall topic and the three compliance topics to /webhooks/shopify', () => {
     const topics = [...list(toml, 'topics'), ...list(toml, 'compliance_topics')];
     expect(topics.sort()).toEqual([...WEBHOOK_TOPICS].sort());
-    expect([...toml.matchAll(/^\s*uri\s*=\s*"([^"]*)"/gm)].map((match) => match[1])).toEqual(['/webhooks/shopify', '/webhooks/shopify']);
+    // Relative (resolved against application_url) or absolute, the path is always /webhooks/shopify.
+    const paths = [...toml.matchAll(/^\s*uri\s*=\s*"([^"]*)"/gm)].map((match) => new URL(match[1] ?? '', 'https://base.example').pathname);
+    expect(paths).toEqual(['/webhooks/shopify', '/webhooks/shopify']);
   });
 
   it('keeps the backend callback as the only redirect URL', () => {
@@ -72,11 +74,16 @@ describe('embedded configuration (web app)', () => {
   it('is embedded and opens the web origin as the app URL', () => {
     expect(embedded).toMatch(/^embedded\s*=\s*true\s*$/m);
     expect(value(embedded, 'application_url')).toBe('https://REPLACE_WITH_WEB_ORIGIN/');
-    expect(list(embedded, 'redirect_urls')).toEqual(['https://REPLACE_WITH_PUBLIC_BASE_URL/auth/shopify/callback']);
   });
 
-  it('documents why the web origin must proxy the Shopify routes', () => {
-    expect(embedded).toMatch(/proxy \/webhooks\/shopify/);
-    expect(embedded).toMatch(/\/auth\/shopify\/\*/);
+  it('sends the OAuth callback and the webhooks straight to the backend host of the live configuration', () => {
+    const backendHost = new URL(value(live, 'application_url')).host;
+    expect(new URL(list(embedded, 'redirect_urls')[0] ?? 'https://invalid.example/').host).toBe(backendHost);
+    const uris = [...embedded.matchAll(/^\s*uri\s*=\s*"([^"]*)"/gm)].map((match) => match[1] ?? '');
+    expect(uris).toEqual([`https://${backendHost}/webhooks/shopify`, `https://${backendHost}/webhooks/shopify`]);
+  });
+
+  it('has exactly one placeholder left: the web origin', () => {
+    expect([...new Set(embedded.match(/REPLACE_WITH_[A-Z_]+/g) ?? [])]).toEqual(['REPLACE_WITH_WEB_ORIGIN']);
   });
 });

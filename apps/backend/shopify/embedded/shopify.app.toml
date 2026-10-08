@@ -3,11 +3,10 @@
 # The live backend-only configuration is ../shopify.app.toml.
 # Validated against https://shopify.dev/docs/apps/build/cli-for-apps/app-configuration (October 2026).
 #
-# Before `shopify app deploy`, replace:
-#   REPLACE_WITH_CLIENT_ID          the Client ID from the Dev Dashboard
-#   REPLACE_WITH_WEB_ORIGIN         the host of the embedded web app (apps/web), for example the cloudflared tunnel host
-#   REPLACE_WITH_PUBLIC_BASE_URL    the host of PUBLIC_BASE_URL (the backend). It may be the same host as the web origin
-#                                   when the web app fronts the backend.
+# Before `shopify app deploy`, replace the one remaining placeholder:
+#   REPLACE_WITH_WEB_ORIGIN   the host of the deployed web app (apps/web), for example shopify-retailer-web.synquic.tech
+# The backend host (shopify-retailer.synquic.tech) is already filled in, and the webhook URLs point straight at it, so the
+# web app does not need to forward them.
 #
 # Keep in sync with the backend env:
 #   access_scopes.scopes   = SHOPIFY_SCOPES
@@ -21,9 +20,8 @@
 # why auth.redirect_urls stays. Scopes use managed installation (no use_legacy_install_flow), so Shopify installs the
 # app and grants the scopes above when the merchant opens it.
 #
-# Webhook uri values below are relative, and Shopify resolves them against application_url. The web origin therefore
-# has to proxy /webhooks/shopify (raw body, headers untouched) to the backend. It also has to proxy /auth/shopify/*
-# when PUBLIC_BASE_URL is the web origin. Put an absolute backend URL in uri instead if the web origin cannot proxy.
+# The OAuth redirect URL and the webhook URLs are absolute and go to the backend. Only the app URL (what Shopify opens inside
+# the admin) is the web origin.
 #
 # Distribution (public, unlisted) is chosen in the Dev Dashboard, not in this file.
 # The first `shopify app deploy` asks whether to include this configuration; answer "Yes, always".
@@ -37,18 +35,18 @@ embedded = true
 scopes = "read_products,read_files,write_files"
 
 [auth]
-redirect_urls = ["https://REPLACE_WITH_PUBLIC_BASE_URL/auth/shopify/callback"]
+redirect_urls = ["https://shopify-retailer.synquic.tech/auth/shopify/callback"]
 
 [webhooks]
 api_version = "2026-10"
 
   [[webhooks.subscriptions]]
   topics = ["app/uninstalled"]
-  uri = "/webhooks/shopify"
+  uri = "https://shopify-retailer.synquic.tech/webhooks/shopify"
 
   [[webhooks.subscriptions]]
   compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-  uri = "/webhooks/shopify"
+  uri = "https://shopify-retailer.synquic.tech/webhooks/shopify"
 
 [build]
 automatically_update_urls_on_dev = false
