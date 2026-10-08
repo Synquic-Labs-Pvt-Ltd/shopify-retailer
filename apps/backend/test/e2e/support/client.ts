@@ -75,6 +75,9 @@ export interface ApiClient {
   delete(path: string): request.Test;
 }
 
+// What the helpers below need from a client: any way of sending authenticated requests (a mobile login or an embedded app).
+export type Requester = Pick<ApiClient, 'get' | 'post' | 'delete'>;
+
 export function apiClient(e2e: E2e, session: AuthSessionResponse): ApiClient {
   const authorize = (test: request.Test): request.Test => test.set('authorization', `Bearer ${client.session.accessToken}`);
   const client: ApiClient = {
@@ -145,7 +148,7 @@ export function postToTarget(target: UploadTarget, spec: UploadSpec): Promise<Re
   return fetch(target.url, { method: target.method, body: form });
 }
 
-export async function uploadReferences(client: ApiClient, specs: UploadSpec[]): Promise<MediaObject[]> {
+export async function uploadReferences(client: Requester, specs: UploadSpec[]): Promise<MediaObject[]> {
   const res = await client.post('/api/v1/media/uploads', uploadsBody(specs));
   if (res.status !== 200) throw new Error(`uploads answered ${res.status}: ${res.text}`);
   const { targets } = uploadsResponseSchema.parse(res.body);
@@ -164,7 +167,7 @@ export async function uploadReferences(client: ApiClient, specs: UploadSpec[]): 
 }
 
 // Polls GET /media like the app does, until every asset left processing.
-export async function waitMediaSettled(client: ApiClient, ids: string[], timeoutMs = 30_000): Promise<MediaObject[]> {
+export async function waitMediaSettled(client: Requester, ids: string[], timeoutMs = 30_000): Promise<MediaObject[]> {
   return waitFor(
     async () => {
       const res = await client.get(`/api/v1/media?ids=${ids.join(',')}`);
@@ -176,7 +179,7 @@ export async function waitMediaSettled(client: ApiClient, ids: string[], timeout
   );
 }
 
-export async function uploadReadyReferences(client: ApiClient, specs: UploadSpec[]): Promise<MediaObject[]> {
+export async function uploadReadyReferences(client: Requester, specs: UploadSpec[]): Promise<MediaObject[]> {
   const completed = await uploadReferences(client, specs);
   const settled = await waitMediaSettled(
     client,
@@ -187,11 +190,11 @@ export async function uploadReadyReferences(client: ApiClient, specs: UploadSpec
   return settled;
 }
 
-export async function createBatch(client: ApiClient, body: Omit<CreateBatchInput, 'idempotencyKey'> & { idempotencyKey?: string }): Promise<request.Response> {
+export async function createBatch(client: Requester, body: Omit<CreateBatchInput, 'idempotencyKey'> & { idempotencyKey?: string }): Promise<request.Response> {
   return client.post('/api/v1/batches', { idempotencyKey: randomUUID(), ...body });
 }
 
-export async function getBatch(client: ApiClient, batchId: string): Promise<BatchDetail> {
+export async function getBatch(client: Requester, batchId: string): Promise<BatchDetail> {
   const res = await client.get(`/api/v1/batches/${batchId}`);
   if (res.status !== 200) throw new Error(`GET /batches/${batchId} answered ${res.status}: ${res.text}`);
   return batchDetailSchema.parse(res.body);

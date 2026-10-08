@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { FAKE_JPEG } from '../../../src/modules/ai/fake-media';
+import { checkExchangeRequest, EXCHANGE_GRANT } from '../../helpers/session-token';
 import { DEFAULT_USER, signedQueryString, type FakeUser } from '../../shopify/fake-shopify';
 import { productDetail, productImageUrl, productList, productSnapshots } from './stub-catalog';
 import { fileCreate, fileDelete, fileStatus, stagedUploadsCreate } from './stub-files';
@@ -35,6 +36,10 @@ export interface ShopifyStub {
   approve(authorizeUrl: string, options?: ApproveOptions): string;
   // Drops every token of the shop, like an uninstall on Shopify's side.
   revokeTokens(domain: string): void;
+  // The merchant uninstalls the app: every token is dropped and token exchanges are refused (400) until reinstall().
+  uninstallApp(domain: string): void;
+  // The merchant installs the app again: token exchanges work.
+  reinstallApp(domain: string): void;
   graphqlOperations(shop?: string): string[];
 }
 
@@ -53,7 +58,11 @@ interface Options {
   apiSecret: string;
   apiVersion: string;
   redirectUri: string;
+  // Scopes the token exchange reports. Default: the scopes the app asks for.
+  scopes?: string;
 }
+
+const DEFAULT_SCOPES = 'read_products,read_files,write_files';
 
 interface PendingGrant {
   shop: string;
@@ -86,6 +95,21 @@ export function createShopifyStub(options: Options): ShopifyStub {
       refresh_token: refreshToken,
       refresh_token_expires_in: 7_776_000,
     };
+  }
+
+  // An App Bridge session token traded for an expiring offline token (managed installation).
+  async function tokenExchange(shop: StubShop, form: Record<string, string>): Promise<Response> {
+    const base = { kind: 'token' as const, shop: shop.domain, grant: 'token_exchange' as const, expiring: form.expiring === '1' };
+    if (state.knobs.exchangeDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.knobs.exchangeDelayMs));
+    const problem = state.knobs.refuseExchange.has(shop.domain)
+      ? 'The app is not installed on this shop'
+      : await checkExchangeRequest(form, { shop: shop.domain, apiKey: options.apiKey, apiSecret: options.apiSecret });
+    if (problem !== null) {
+      state.calls.push({ ...base, status: 400 });
+      return jsonResponse(400, { error: 'invalid_request', error_description: problem });
+    }
+    state.calls.push({ ...base, status: 200 });
+    return jsonResponse(200, issueOffline(shop, options.scopes ?? DEFAULT_SCOPES));
   }
 
   function tokenEndpoint(shop: StubShop, form: Record<string, string>): Response {
@@ -223,7 +247,8 @@ export function createShopifyStub(options: Options): ShopifyStub {
     const shop = state.shops.get(url.hostname);
     if (shop !== undefined && method === 'POST') {
       if (url.pathname === '/admin/oauth/access_token' && body instanceof URLSearchParams) {
-        return tokenEndpoint(shop, Object.fromEntries(body.entries()));
+        const form = Object.fromEntries(body.entries());
+        return form.grant_type === EXCHANGE_GRANT ? tokenExchange(shop, form) : tokenEndpoint(shop, form);
       }
       if (url.pathname === `/admin/api/${options.apiVersion}/graphql.json` && typeof body === 'string') {
         return graphql(shop, new Headers(init?.headers), body);
@@ -299,6 +324,16 @@ export function createShopifyStub(options: Options): ShopifyStub {
       shop.offlineTokens.clear();
       shop.onlineTokens.clear();
       shop.refreshToken = null;
+    },
+
+    uninstallApp(domain) {
+      stub.revokeTokens(domain);
+      state.knobs.refuseExchange.add(domain);
+    },
+
+    reinstallApp(domain) {
+      shopByDomain(domain);
+      state.knobs.refuseExchange.delete(domain);
     },
 
     graphqlOperations(shop) {

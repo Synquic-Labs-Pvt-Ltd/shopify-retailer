@@ -77,7 +77,7 @@ export interface FileCreateRecord {
 }
 
 export type StubCall =
-  | { kind: 'token'; shop: string; grant: 'authorization_code' | 'refresh_token'; expiring: boolean; status: number }
+  | { kind: 'token'; shop: string; grant: 'authorization_code' | 'refresh_token' | 'token_exchange'; expiring: boolean; status: number }
   | { kind: 'graphql'; shop: string; operation: string; variables: Record<string, unknown>; token: string | undefined }
   | { kind: 'staged_upload'; shop: string; key: string; filename: string; size: number; type: string; status: number }
   | { kind: 'cdn'; url: string; status: number };
@@ -86,6 +86,10 @@ export interface StubKnobs {
   failShopQuery: boolean;
   // Shops whose refresh_token grant answers 401 (expired or revoked refresh token).
   rejectRefresh: Set<string>;
+  // Shops where the app is not installed: the session token exchange answers 400.
+  refuseExchange: Set<string>;
+  // Time the token endpoint takes to answer a session token exchange, so concurrent requests overlap.
+  exchangeDelayMs: number;
   // The next `remaining` GraphQL requests of this operation answer THROTTLED.
   throttle: { operation: string; remaining: number } | null;
   // The next `remaining` GraphQL requests of this operation answer this HTTP status.
@@ -117,6 +121,8 @@ export function createStubState(): StubState {
     knobs: {
       failShopQuery: false,
       rejectRefresh: new Set(),
+      refuseExchange: new Set(),
+      exchangeDelayMs: 0,
       throttle: null,
       httpFailure: null,
       fileCreateRejection: null,
