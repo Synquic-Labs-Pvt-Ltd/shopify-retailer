@@ -23,6 +23,14 @@ This runbook deploys the backend (Express API plus the generation queue worker) 
 | Memory | At least 512 MB, 1 GB recommended |
 | Always on | Yes. The queue worker and Shopify webhooks need a running process; free tiers that sleep will delay jobs |
 
+Three ways to point a host at the backend, depending on how it handles the monorepo:
+
+| Host setting | File used | Notes |
+|---|---|---|
+| Root directory empty, Dockerfile detected | `Dockerfile` at the repository root | Build context is the repository root |
+| Root directory `apps/backend` | `apps/backend/Dockerfile` | Works with either the repository root or apps/backend as the context; with only apps/backend it clones the monorepo from GitHub at the branch given by the build argument GIT_REF (default main), so the repository must be public or the URL must carry a token |
+| Compose file | `deploy/docker-compose/docker-compose.yml` | Builds from the repository root |
+
 Hosts that detect a pnpm monorepo and insist on choosing an app (for example Synq, which fails with "monorepoApps expected array length to be greater or equal to 1" when the root directory is left empty) can deploy from the compose file `deploy/docker-compose/docker-compose.yml` instead. It builds from the repository root, so the root directory setting stays empty. Point the host's compose file field at that path.
 
 ## 3. Environment variables
