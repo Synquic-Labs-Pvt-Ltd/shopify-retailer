@@ -14,7 +14,7 @@ Not related to Trendzo or ClosetX in any way: no shared code, branding, names, a
 
 ## 2. User flow (end to end)
 
-1. The merchant installs the Retailer Studio app on their Shopify store from an install link. The app is a non-embedded public app with unlisted distribution.
+1. The merchant installs the Retailer Studio app on their Shopify store from an install link. The app is a public app with unlisted distribution. It has two clients: the mobile app (section 16) and the embedded web app that opens inside the Shopify admin (section 27).
 2. The merchant opens the mobile app, enters their store domain, and taps "Log in with Shopify". The Shopify login and consent pages open in the system browser and then return to the app.
 3. The Products tab lists the store's products with search and infinite scroll. The merchant taps to select one product, or several (bulk).
 4. Continue opens "Add references".
@@ -1126,7 +1126,8 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 - Deleting outputs.
 - An admin panel.
 - Shopify Billing or plans.
-- App Store listing, embedded admin UI, App Bridge.
+- App Store listing.
+- Home dashboard and settings pages in the embedded web app (section 27 covers the core flow only).
 - Push notifications.
 - iOS release builds. iOS should work in a dev build but is not verified.
 - Multi-language UI and dark mode.
@@ -1219,3 +1220,43 @@ Backend support for the embedded web app (section 8.3, Embedded app). Code: modu
   - What the offline exchange does to an older offline token and its refresh token (assumed: the older refresh token is retired, the older access token stays valid until it expires), and the exact scope string in the response.
   - That relative webhook uris resolve against application_url, which makes the web origin proxy necessary.
   - That the sub of a session token equals associated_user.id of an online OAuth token, which is what lets the phone and the web app share one user record.
+
+## 27. Embedded web app (apps/web)
+
+A second client for the same backend: a Next.js app that opens inside the Shopify admin (App Home) and offers the core flow of the mobile app. It is not a standalone site: Polaris is licensed so that stand-alone applications must be visually distinct from Shopify products, and an embedded app that uses Polaris web components inside the admin is the supported way to get the Shopify look. The app name is Retailer Studio. No Shopify logos, names or icons appear in our own UI.
+
+### Scope
+- Routes: Products, New generation, Generations (list), Generation detail with a media viewer and downloads. The root route redirects to Generations. There is no login page, no Home page and no Settings page.
+- Same behaviour as the mobile app: product selection (cap from the generation settings), per-product and common references with the resolution rules of section 9, direct browser upload to the Shopify staged target, batch creation with an idempotency key, queue polling, cancel and retry, output viewing and download.
+
+### Stack
+- Next.js 16.4 (App Router, Turbopack), React 19.2.3 (the version React Native pins, so the monorepo keeps a single React), TypeScript, TanStack Query, zustand, zod through @rs/shared. Polaris web components load from Shopify's CDN. No Tailwind and no shadcn.
+- Root layout loads the App Bridge script (data-api-key from NEXT_PUBLIC_SHOPIFY_API_KEY) and the Polaris web components script (NEXT_PUBLIC_POLARIS_URL, default the classic-look channel polaris-1.js; polaris-2.0-rc.js is the new look).
+- Navigation is declared with s-app-nav and handled through the shopify:navigate event. Outside the admin (plain tab, mock mode) a minimal development frame stands in for the admin chrome.
+
+### Authentication and API access
+- Every API call carries a fresh App Bridge session token (shopify.idToken) as a bearer token. There are no cookies, no login redirect and no refresh logic in the web app. The backend verifies the token (section 8.3, Embedded app).
+- The browser calls same-origin /api/v1/*. Next rewrites forward /api/v1, /auth/shopify/* and /webhooks/shopify to BACKEND_URL, so the web origin is the only public URL: application_url, the OAuth redirect URL and the webhook URLs all use it. No CORS is involved.
+- proxy.ts sets Content-Security-Policy frame-ancestors per request from the shop query parameter that the admin adds to the iframe URL (the shop host plus Shopify's admin hosts; a wildcard is not accepted by app review). The root path redirects to /generations and keeps the query string, which App Bridge needs.
+
+### Mock mode
+- NEXT_PUBLIC_MOCK=1 replaces App Bridge with a fake session token, serves /api/v1 from a route handler backed by @rs/mock-api (the same fixtures as the mobile mock), and shows the development frame. A batch advances over time, with a delay banner and one failed video, so the whole flow can be exercised with no backend and no Shopify.
+
+### Browser specifics
+- References: images are downscaled in the browser (2048 px long edge, JPEG quality 0.9), HEIC is rejected with a message, video duration is read from video metadata (the backend requires it). The draft (selection, uploaded references, idempotency key) is persisted in localStorage and bound to the shop; File objects cannot be persisted, so an interrupted upload returns as failed and can only be removed.
+- Upload transport: direct XMLHttpRequest multipart to the staged target with upload progress. Whether Shopify's staging buckets allow browser cross-origin uploads (a progress listener forces a CORS preflight) is unverified. A status-0 failure before any bytes are sent is reported as a blocked upload. The contingency is a backend streaming route (POST /api/v1/media/:id/content) that forwards to the staged target; the transport interface already has a stub for it.
+- Downloads: a direct fetch of the CDN file to a blob when the CDN allows it, otherwise the /api/download route, which requires the session token (checked against the backend), allows only https hosts cdn.shopify.com and *.shopifycdn.com, never follows redirects, caps the size and streams with Content-Disposition attachment. If both fail the file opens in a new tab. Whether the admin iframe permits downloads is unverified.
+
+### Environment (apps/web)
+- NEXT_PUBLIC_SHOPIFY_API_KEY: the Shopify client id (public).
+- BACKEND_URL: the backend base URL, server side only.
+- NEXT_PUBLIC_MOCK: 1 for mock mode, unset otherwise.
+- NEXT_PUBLIC_POLARIS_URL: the Polaris web components script URL.
+- The Shopify client secret stays in the backend.
+
+### Deployment
+- The web app is a separate Node service (next build, next start; output standalone). Behind it the backend stays private except for the webhook and OAuth paths, which the web origin forwards. For development a tunnel to the web origin gives Shopify the public https address it needs (webhooks are called by Shopify's servers and the admin iframe will not load plain http).
+- shopify.app.toml sets embedded = true and application_url to the web origin. Until the web app is deployed, the backend alone can be registered as a non-embedded app for the mobile app (docs/DEPLOY.md).
+
+### Unverified
+- App Bridge and Polaris script behaviour with Next.js 16 and React 19 custom elements; the s-table selection and bulk-action composition; browser CORS for Shopify staged uploads; downloads from inside the admin iframe; the shape of real session-token claims (section 26, Embedded session tokens).
