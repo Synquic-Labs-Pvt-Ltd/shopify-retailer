@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Script from 'next/script';
 import type { ReactNode } from 'react';
 import { Providers } from './providers';
 
@@ -22,14 +21,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* Shopify requires App Bridge as a plain synchronous script at the top of the page, before any other script
+            (not next/script, which injects it dynamically after the app has started). Polaris follows it. Mock mode runs
+            in a plain tab without App Bridge. */}
+        {mock ? null : <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={apiKey} />}
+        <script src={polarisUrl} />
         <meta name="shopify-api-key" content={apiKey} />
         <link rel="preconnect" href="https://cdn.shopify.com/" />
         <link rel="stylesheet" href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css" />
       </head>
       <body>
-        {/* App Bridge only works inside the Shopify admin; mock mode runs in a plain tab without it. */}
-        {mock ? null : <Script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={apiKey} strategy="beforeInteractive" />}
-        <Script src={polarisUrl} strategy="beforeInteractive" />
         <Providers>{children}</Providers>
       </body>
     </html>

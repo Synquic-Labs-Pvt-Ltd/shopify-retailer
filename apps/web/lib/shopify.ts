@@ -26,10 +26,29 @@ export function isEmbedded(): boolean {
   return typeof window !== 'undefined' && !MOCK && window.top !== window.self;
 }
 
+const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Polls until read() returns a value or the time is up. App Bridge is a separate script, so on a cold load it can
+// appear a moment after the app's own code starts.
+export async function waitFor<T>(
+  read: () => T | undefined,
+  timeoutMs = 5_000,
+  stepMs = 100,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
+): Promise<T | undefined> {
+  let waited = 0;
+  for (;;) {
+    const value = read();
+    if (value !== undefined || waited >= timeoutMs) return value;
+    await sleep(stepMs);
+    waited += stepMs;
+  }
+}
+
 // A fresh session token for every API call: it is only valid for one minute.
 export async function getSessionToken(): Promise<string> {
   if (MOCK) return 'mock-session-token';
-  const bridge = typeof window === 'undefined' ? undefined : window.shopify;
+  const bridge = await waitFor(() => (typeof window === 'undefined' ? undefined : window.shopify));
   if (bridge === undefined) throw new Error('Shopify App Bridge is not loaded. Open the app from the Shopify admin.');
   return bridge.idToken();
 }

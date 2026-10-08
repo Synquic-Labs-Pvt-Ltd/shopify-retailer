@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adminAppUrl, readShopParam } from './shopify';
+import { adminAppUrl, readShopParam, waitFor } from './shopify';
 
 describe('readShopParam', () => {
   it('reads a myshopify shop from the query string', () => {
@@ -20,5 +20,32 @@ describe('adminAppUrl', () => {
 
   it('encodes the key so it cannot change the path', () => {
     expect(adminAppUrl('gluzu.myshopify.com', 'a/../b?x=1')).toBe('https://gluzu.myshopify.com/admin/apps/a%2F..%2Fb%3Fx%3D1');
+  });
+});
+
+describe('waitFor', () => {
+  it('returns at once when the value is there', async () => {
+    const sleep = async () => {
+      throw new Error('must not sleep');
+    };
+    expect(await waitFor(() => 'ready', 1000, 100, sleep)).toBe('ready');
+  });
+
+  it('waits for a value that appears later', async () => {
+    let calls = 0;
+    const sleep = async () => {
+      calls += 1;
+    };
+    expect(await waitFor(() => (calls >= 3 ? 'late' : undefined), 5000, 100, sleep)).toBe('late');
+    expect(calls).toBe(3);
+  });
+
+  it('gives up after the timeout', async () => {
+    let slept = 0;
+    const sleep = async (ms: number) => {
+      slept += ms;
+    };
+    expect(await waitFor(() => undefined, 500, 100, sleep)).toBeUndefined();
+    expect(slept).toBe(500);
   });
 });
