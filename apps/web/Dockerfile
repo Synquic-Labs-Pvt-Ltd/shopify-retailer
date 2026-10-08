@@ -45,6 +45,8 @@ WORKDIR /app
 # Next's standalone output: a server with only the files it needs, plus the static assets it does not copy itself.
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+# Hosts that start containers with `npm start` need a start script next to the server.
+RUN printf '%s' '{"name":"retailer-studio-web","private":true,"scripts":{"start":"node apps/web/server.js"}}' > package.json
 USER node
 EXPOSE 3000
 
