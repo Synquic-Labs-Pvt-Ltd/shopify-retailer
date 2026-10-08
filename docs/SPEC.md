@@ -136,9 +136,9 @@ packages/shared holds every request and response schema named in section 15, eve
 
 ### 8.1 App configuration
 - Create the app in the Shopify Dev Dashboard as a public app with unlisted distribution. Configure it through apps/backend/shopify/shopify.app.toml and deploy with the Shopify CLI.
-  - embedded: false
-  - application_url: PUBLIC_BASE_URL plus "/"
-  - redirect URL: PUBLIC_BASE_URL plus "/auth/shopify/callback"
+  - embedded: true. The web app opens inside the Shopify admin and signs in with session tokens (section 8.3, Embedded app). The mobile app does not change.
+  - application_url: the web origin (the host of apps/web) plus "/". The webhook uris below are relative and Shopify resolves them against this URL, so the web origin proxies /webhooks/shopify to the backend, and /auth/shopify/* too when it is also PUBLIC_BASE_URL.
+  - redirect URL: PUBLIC_BASE_URL plus "/auth/shopify/callback". The mobile login keeps the authorization code grant against the backend.
   - webhooks api_version: equal to SHOPIFY_API_VERSION
 - Access scopes: read_products, read_files, write_files. write_products is not needed in cycle 1 because outputs are not attached to products.
 - Display name: "Retailer Studio" (working name). It must not contain "Shopify".
@@ -173,7 +173,24 @@ Shopify recommends the authorization code grant for non-embedded and standalone 
 7. Refresh: POST /auth/refresh rotates the token. If a refresh token that was already rotated is presented again, the whole session family is revoked. Logout revokes the session.
 8. Landing page GET /. Shopify opens it after install or from the admin.
    - Verify the HMAC on the query. If the shop is not installed, start the offline phase.
-   - Otherwise render a static HTML page: "Retailer Studio is installed on {shop}. Open the Retailer Studio app on your phone and log in with {shop}."
+   - Otherwise render a static HTML page: "Retailer Studio is installed on {shop}. Open the Retailer Studio app on your phone and log in with {shop}." A second line says that on a computer the app opens from the Apps menu of the Shopify admin. This route only serves direct (non-embedded) visits; inside the admin Shopify opens the web origin.
+
+**Embedded app: session tokens and token exchange**
+
+The web app (apps/web) runs inside the Shopify admin and does not use the redirect flow above. It authenticates every API request with an App Bridge session token. The backend accepts these next to its own access JWTs.
+
+1. Shopify opens the web origin in an iframe. App Bridge gives the page a session token (an ID token): a JWT signed HS256 with the app's client secret, valid for one minute, with the claims iss, dest, aud, sub (the Shopify staff user id), exp, nbf, iat, jti and sid. The page sends a fresh token as Authorization: Bearer on each request. It is not one of our access JWTs.
+2. The backend verifies the token locally and answers 401 unless all of these hold:
+   - the signature is valid HS256 under SHOPIFY_API_SECRET (no other algorithm, never none);
+   - exp is in the future and nbf is in the past, with 5 seconds of clock skew;
+   - aud is SHOPIFY_API_KEY;
+   - iss and dest are https URLs with the same hostname, and that hostname is a myshopify.com shop domain;
+   - sub, iss, dest, aud, exp and nbf are present.
+3. The shop is the host of dest. If the shop is unknown, not active, or has no usable offline token (none stored, or an expired one whose refresh token is also dead), the backend trades the session token for an expiring offline token (token exchange, POST /admin/oauth/access_token with the token-exchange grant, subject_token_type id_token, requested_token_type offline-access-token, expiring=1). It stores the token like the OAuth callback does (status active, tokens encrypted, scopes as reported, shop info best effort) and clears the uninstall markers of a reinstalled shop. A shop that already has a usable token is not exchanged: acquiring a token through either grant retires the other refresh tokens of the app on that shop.
+4. At most one exchange per shop runs at a time. Concurrent requests in one process share the running exchange. Across instances the per-shop lock of the token refresh (refreshLockUntil) is claimed first; losers wait and re-read, so a refresh and an exchange never run together. A shop that has no document yet gets a bare placeholder (status uninstalled, no installedAt) to hold the lock, which is removed if the exchange fails.
+5. The staff user is the users document of (shop, Shopify user id), created on first sight with empty email and names, because the token does not carry them. It is the same document the phone login uses for that Shopify user. lastLoginAt is refreshed at most every 5 minutes.
+6. Failures: Shopify refusing the exchange (400, 401 or 403) answers 409 shop_reauth_required and activates nothing, so an uninstalled shop stays uninstalled; Shopify unreachable or erroring answers 502 and leaves the shop as it was. After an uninstall webhook the shop is uninstalled, the next request tries one exchange, Shopify refuses it, and the app sees 409.
+7. requireAuth tells the two kinds apart by trying its own access JWT first. A token that fails that check and has a dest claim is verified as a session token; anything else fails as before with the same 401. The signature decides, the claims only choose the verifier.
 
 ### 8.4 Webhooks
 - One endpoint: POST /webhooks/shopify, raw body, X-Shopify-Hmac-Sha256 verified against the app secret.
@@ -578,6 +595,8 @@ Indexes: shopDomain unique; status.
 
 Index: { shopId, shopifyUserId } unique.
 
+A user first seen through a session token (section 8.3, Embedded app) has no email, names or locale; the phone login fills them in later for the same shopifyUserId.
+
 ### 14.3 sessions
 
 | Field | Type | Rules |
@@ -741,8 +760,11 @@ Fields:
 
 **General**
 - Base path /api/v1, except the browser and Shopify routes (/, /auth/shopify/*, /webhooks/shopify).
-- JSON only. Authorization: Bearer access JWT on every /api/v1 route except auth exchange and refresh.
+- JSON only. Authorization: Bearer on every /api/v1 route except auth exchange and refresh. Two kinds of bearer token are accepted:
+  - our access JWT (the mobile app);
+  - a Shopify App Bridge session token (the embedded web app, section 8.3). It is never sent to the auth routes and never refreshed; the page sends a new one with each request.
 - JWT claims: sub (userId), shopId, shopDomain, typ "access", exp 15 minutes. Signed HS256 with JWT_SECRET.
+- A request authenticated by either kind gets the same context (user, shop, shop domain), so every route behaves the same. A session token for a shop that cannot be authorized (Shopify refuses the exchange) gets 409 shop_reauth_required; one that fails verification gets 401 unauthorized.
 - Error envelope: error.code, error.message, optional error.details.
 - Standard codes:
   - unauthorized (401)
@@ -991,6 +1013,9 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 - PKCE S256 binds the browser login to the app instance that started it.
 - Tenant isolation: every query is filtered by the shopId from the JWT. Media and batch IDs from clients are always re-checked against the shop.
 - express-rate-limit protects auth routes (30 per minute per IP) and API routes (300 per minute per user).
+  - The API limiter runs before authentication and keys on the signature-verified identity of the bearer token: shop and user for our JWT, shop domain and Shopify user id for a session token. Session tokens change every minute, so keying on the token text would give a new budget each minute. Verification for the key needs no database and never triggers a token exchange.
+  - A token that does not verify (unsigned, wrong key, expired, or absent) never gets a user key; it is counted against the client IP. A forged token therefore cannot spend another user's budget.
+- Embedded session tokens: the app's client secret (SHOPIFY_API_SECRET) stays in the backend. It verifies session tokens and authenticates the token exchange, and the browser never sees it. The offline token obtained by the exchange stays encrypted in the backend like any other, and the web app never receives it. Session tokens are short lived and are not stored or logged, and an uninstall is detected through the exchange being refused, not through a revoked session.
 - helmet is enabled, the JSON body limit is 1 MB, and the webhook route uses a raw body.
 - Supply chain:
   - The pnpm lockfile is committed.
@@ -1010,6 +1035,7 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 - JWT_SECRET, TOKEN_ENC_KEY
 - SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SHOPIFY_SCOPES, SHOPIFY_API_VERSION
 - APP_DEEP_LINK_SCHEME (retailerstudio)
+- No variable is added for the embedded app: session tokens are verified with SHOPIFY_API_SECRET (key) and SHOPIFY_API_KEY (aud).
 - GOOGLE_CLOUD_PROJECT, GOOGLE_APPLICATION_CREDENTIALS (path to the service-account JSON with the Vertex AI User role)
 - GEMINI_API_KEY (only for the aistudio provider)
 - GENERATION_CONFIG_PATH (optional)
@@ -1139,7 +1165,7 @@ This section records where the implementation differs from the text above or add
 - A rotated refresh token that is presented again revokes its whole family. Two concurrent refreshes with the same token therefore log the user out, so the client sends refreshes one at a time with a shared in-flight promise.
 - A webhook delivery still being processed gets a 503 so Shopify retries. A failed delivery's idempotency record is deleted so the retry is processed from scratch. Upstream Shopify failures return code internal with HTTP 502; exhausting the THROTTLED retries returns too_many_requests.
 - A fresh offline exchange retires older tokens, so refresh results are saved compare-and-set on the refresh token that was used.
-- The per-user API limit (300 per minute) is keyed by a fingerprint of the bearer token, with the client IP as the fallback, and applies to every authenticated route after the auth routes.
+- The per-user API limit (300 per minute) applies to every authenticated route after the auth routes. It is keyed by the verified user (see section 18), with the client IP as the fallback, so logging in again no longer gives a fresh budget.
 
 ### Catalog and media
 - Product search turns each word into a title wildcard and escapes special characters, so user input can never become a filter or operator. At most 8 terms.
@@ -1174,3 +1200,22 @@ This section records where the implementation differs from the text above or add
 - The draft store is versioned; a persisted uploading slot returns as failed after an app kill, and processing slots resume polling.
 - Mock mode (EXPO_PUBLIC_API_MOCK=true) serves every endpoint, including a batch that advances over time with a delay banner and one failed video.
 - Device-only behaviour is unverified: camera, HEIC conversion, the real upload to a Shopify staged target, pinch zoom, video playback, gallery saves and the share sheet. If Android destroys the activity while the camera is open, the picked file is lost.
+
+### Embedded session tokens
+Backend support for the embedded web app (section 8.3, Embedded app). Code: modules/auth/session-token.ts (verification), modules/auth/embedded.ts (user mapping), ensureOfflineToken in modules/shops (token exchange and its single flight), createApiLimiter (keying).
+- Decisions and deviations:
+  - The mobile contracts, the refresh sessions and the webhook handlers are unchanged. The only visible change for the phone is the API rate limit: it now follows the user instead of the token, so a new login does not refill the budget.
+  - A shop that has no document gets a placeholder (status uninstalled, no installedAt) while its first exchange runs, because the lock lives on the shop document. It is deleted when the exchange fails. A crash in between leaves a bare uninstalled document, which the next exchange reuses.
+  - sid is optional (sessionId is null without it) and jti is not required. Replay is not blocked: the same token is legitimately used for many requests within its minute.
+  - Concurrent requests share the first caller's exchange and its outcome, including a refusal, even though each carries its own session token.
+  - A request for an uninstalled shop asks Shopify for one exchange each time. There is no negative cache.
+  - The exchange stores the scopes Shopify reports and does not compare them with SHOPIFY_SCOPES (the OAuth callback still does). A shop whose scopes are short is not re-exchanged on every request.
+  - A refusal of any kind (400, 401, 403) is 409 shop_reauth_required, including a session token that Shopify considers expired although it passed the 5 second skew check. The web app should retry once with a fresh token before it shows a reinstall screen.
+  - The backend adds no CORS headers. The web origin proxies /api/v1 (and the Shopify routes) to the backend.
+  - The shop info query moved from the OAuth client to modules/shops so that both flows share it.
+- Unverified against a real Shopify store:
+  - What sub and dest look like in practice (the docs show a numeric string for sub, and an https myshopify.com origin without a path for dest; iss carries the /admin path). Tokens without sid or with a numeric sub are accepted.
+  - Whether the token exchange works for an app that is not installed yet (managed installation should install it on the first exchange) and what error Shopify returns for an uninstalled app or an expired token (assumed 400).
+  - What the offline exchange does to an older offline token and its refresh token (assumed: the older refresh token is retired, the older access token stays valid until it expires), and the exact scope string in the response.
+  - That relative webhook uris resolve against application_url, which makes the web origin proxy necessary.
+  - That the sub of a session token equals associated_user.id of an online OAuth token, which is what lets the phone and the web app share one user record.
