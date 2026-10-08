@@ -2,15 +2,16 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { isEmbedded } from '@/lib/shopify';
+import { isEmbedded, MOCK } from '@/lib/shopify';
 import { DevFrame } from './DevFrame';
+import { OutsideAdmin } from './OutsideAdmin';
 
 export const NAV_LINKS = [
   { href: '/generations', label: 'Generations' },
   { href: '/products', label: 'Products' },
 ] as const;
 
-type Mode = 'unknown' | 'embedded' | 'dev';
+type Mode = 'unknown' | 'embedded' | 'dev' | 'outside';
 
 // Inside the Shopify admin, App Bridge draws the real top bar and navigation: this component only declares
 // the navigation links (s-app-nav) and handles the navigate events App Bridge fires when one is clicked.
@@ -20,7 +21,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<Mode>('unknown');
 
   useEffect(() => {
-    setMode(isEmbedded() ? 'embedded' : 'dev');
+    // Outside the admin: the development frame in mock mode, a "open it from Shopify" page otherwise.
+    setMode(isEmbedded() ? 'embedded' : MOCK ? 'dev' : 'outside');
   }, []);
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [router]);
 
   if (mode === 'dev') return <DevFrame>{children}</DevFrame>;
+  if (mode === 'outside') return <OutsideAdmin />;
   return (
     <>
       <s-app-nav>

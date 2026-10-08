@@ -42,3 +42,16 @@ export function showToast(message: string, isError = false): void {
   }
   window.dispatchEvent(new CustomEvent<DevToastDetail>(DEV_TOAST_EVENT, { detail: { message, isError } }));
 }
+
+const SHOP_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
+
+// The shop that Shopify adds to the URL when it launches the app, or null when it is missing or not a myshopify host.
+export function readShopParam(search: string): string | null {
+  const shop = new URLSearchParams(search).get('shop');
+  return shop !== null && SHOP_PATTERN.test(shop) ? shop : null;
+}
+
+// Where the merchant opens the app inside their admin. Shopify routes /admin/apps/<client id> to the app's own page.
+export function adminAppUrl(shop: string, apiKey: string): string {
+  return `https://${shop}/admin/apps/${encodeURIComponent(apiKey)}`;
+}
