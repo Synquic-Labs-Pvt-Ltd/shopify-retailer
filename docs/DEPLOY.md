@@ -23,6 +23,8 @@ This runbook deploys the backend (Express API plus the generation queue worker) 
 | Memory | At least 512 MB, 1 GB recommended |
 | Always on | Yes. The queue worker and Shopify webhooks need a running process; free tiers that sleep will delay jobs |
 
+Hosts that detect a pnpm monorepo and insist on choosing an app (for example Synq, which fails with "monorepoApps expected array length to be greater or equal to 1" when the root directory is left empty) can deploy from the compose file `deploy/docker-compose/docker-compose.yml` instead. It builds from the repository root, so the root directory setting stays empty. Point the host's compose file field at that path.
+
 ## 3. Environment variables
 
 Paste these into the host's environment settings. A ready file with the generated secrets filled in is at `apps/backend/secrets/deploy.env` on the machine that prepared this repository (git-ignored, never committed).

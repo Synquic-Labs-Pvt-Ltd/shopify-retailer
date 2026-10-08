@@ -1,0 +1,37 @@
+# Retailer Studio backend (Express API plus the generation queue worker) for hosts that deploy from a compose file.
+# The build context is the repository root (two levels up) because the backend depends on the workspace package
+# packages/shared; the Dockerfile at the root builds only the backend and what it needs.
+#
+# Every value below comes from the host's environment settings (see docs/DEPLOY.md). Secrets are never written here.
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # No host port is published, so it cannot clash with other services on the same server: the host's router
+    # reaches the container on port 3000.
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      ROLE: all
+      PORT: "3000"
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      MONGODB_URI: ${MONGODB_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      TOKEN_ENC_KEY: ${TOKEN_ENC_KEY}
+      SHOPIFY_API_KEY: ${SHOPIFY_API_KEY}
+      SHOPIFY_API_SECRET: ${SHOPIFY_API_SECRET}
+      SHOPIFY_SCOPES: ${SHOPIFY_SCOPES:-read_products,read_files,write_files}
+      SHOPIFY_API_VERSION: ${SHOPIFY_API_VERSION:-2026-10}
+      APP_DEEP_LINK_SCHEME: ${APP_DEEP_LINK_SCHEME:-retailerstudio}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-shopify-retailer}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
