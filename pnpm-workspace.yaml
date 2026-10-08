@@ -2,6 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# React Native tooling (Gradle and the Expo CLI run `node` directly) expects a flat node_modules.
+# pnpm 12 reads this from here and ignores `node-linker` in .npmrc.
+nodeLinker: hoisted
+
 # Dependency install scripts are denied by default (pnpm 11+), and an undecided script fails the install.
 # Both entries below are explicit denials, and nothing here needs an install script:
 # - esbuild: its postinstall only swaps in the prebuilt binary, which the platform package already provides.

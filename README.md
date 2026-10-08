@@ -13,7 +13,7 @@ The single source of truth is [docs/SPEC.md](docs/SPEC.md). If code and spec dis
 | `packages/shared` (`@rs/shared`) | Enums, zod contracts, generation config schema, creative plan schema. Consumed as TypeScript source (no build step) by the backend, Metro, vitest and tsx. Frozen after Phase 0. |
 | `docs/SPEC.md` | The specification. |
 
-Root files: `turbo.json`, `pnpm-workspace.yaml`, `.npmrc` (`node-linker=hoisted` for React Native), `tsconfig.base.json`.
+Root files: `turbo.json`, `pnpm-workspace.yaml` (workspaces, `nodeLinker: hoisted` for React Native, the install-script allowlist), `tsconfig.base.json`.
 
 ## Toolchain warning
 

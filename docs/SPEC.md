@@ -59,7 +59,7 @@ Not related to Trendzo or ClosetX in any way: no shared code, branding, names, a
 
 | Layer | Choice |
 |---|---|
-| Monorepo | pnpm 12 workspaces plus Turborepo 2. .npmrc sets node-linker=hoisted for React Native compatibility. Dependency install scripts are denied by default; the allowlist lives in pnpm-workspace.yaml. |
+| Monorepo | pnpm 12 workspaces plus Turborepo 2. pnpm-workspace.yaml sets nodeLinker: hoisted for React Native compatibility (pnpm 12 ignores node-linker in .npmrc, and Gradle and the Expo CLI need a flat node_modules). Dependency install scripts are denied by default; the allowlist lives in pnpm-workspace.yaml. |
 | Language | TypeScript 6 (strict) everywhere. |
 | Shared contracts | packages/shared: zod 4 schemas for every API request and response, enums, the generation config schema, and inferred TS types. Consumed as TypeScript source, with no build step. |
 | Backend | Node.js 22 LTS or newer, Express 5, Mongoose 9, zod 4, pino logging, jose (JWT), google-auth-library (Vertex auth), native fetch for REST calls. Runs through tsx; the build script is the type check. |
@@ -93,7 +93,7 @@ Not related to Trendzo or ClosetX in any way: no shared code, branding, names, a
   - src/enums.
   - src/config: generation config schema.
 - Root files:
-  - docs/SPEC.md (this file), turbo.json, pnpm-workspace.yaml, .npmrc, tsconfig.base.json.
+  - docs/SPEC.md (this file), turbo.json, pnpm-workspace.yaml, tsconfig.base.json.
   - .gitignore, which must include node_modules, .env*, .vscode/, dist, build, android, ios, .expo and *.log.
   - apps/backend/.env.example and apps/mobile/.env.example.
 
@@ -1045,7 +1045,7 @@ The text component caps font scaling at 1.3x. On Android, line height is at leas
 ### Phase 0: Foundation (main thread, sequential)
 - P0.1 Init the repo, set the origin remote, add docs/SPEC.md, .gitignore, .gitattributes.
 - P0.2 Toolchain guard: verify node, corepack and pnpm resolve to clean installs. Enable pnpm through corepack.
-- P0.3 Scaffold the monorepo: pnpm workspace, turbo pipelines (build, typecheck, test, lint), tsconfig base, .npmrc with node-linker=hoisted, the onlyBuiltDependencies allowlist.
+- P0.3 Scaffold the monorepo: pnpm workspace, turbo pipelines (build, typecheck, test, lint), tsconfig base, nodeLinker hoisted and the install-script allowlist in pnpm-workspace.yaml.
 - P0.4 packages/shared: all enums, the zod contracts for section 15, the generation config schema for section 13, the creative plan schema for section 12.2. Freeze.
 - P0.5 apps/backend skeleton:
   - core env, logger, Mongo connection, error envelope, /health, role switch
