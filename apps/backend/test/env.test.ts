@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEV_DEFAULTS, EnvValidationError, parseEnv } from '../src/core/env';
+import { DEV_DEFAULTS, EnvValidationError, parseEnv, parseServiceAccountJson } from '../src/core/env';
 
 const productionEnv = {
   NODE_ENV: 'production',
@@ -9,6 +9,36 @@ const productionEnv = {
   SHOPIFY_API_KEY: 'real-key',
   SHOPIFY_API_SECRET: 'real-secret',
 };
+
+const serviceAccount = {
+  type: 'service_account',
+  project_id: 'demo-project',
+  client_email: 'svc@demo-project.iam.gserviceaccount.com',
+  private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
+};
+
+describe('GOOGLE_SERVICE_ACCOUNT_JSON', () => {
+  it('accepts the key as raw JSON or as base64', () => {
+    const json = JSON.stringify(serviceAccount);
+    expect(parseServiceAccountJson(json)?.project_id).toBe('demo-project');
+    expect(parseServiceAccountJson(Buffer.from(json).toString('base64'))?.client_email).toBe(serviceAccount.client_email);
+    expect(parseEnv({ GOOGLE_SERVICE_ACCOUNT_JSON: json }).GOOGLE_SERVICE_ACCOUNT_JSON).toBe(json);
+  });
+
+  it('rejects anything that is not a service-account key without echoing the value', () => {
+    expect(parseServiceAccountJson('not json')).toBeNull();
+    expect(parseServiceAccountJson(JSON.stringify({ type: 'authorized_user' }))).toBeNull();
+    const secretish = JSON.stringify({ type: 'service_account', private_key: 'TOP-SECRET-VALUE' });
+    try {
+      parseEnv({ GOOGLE_SERVICE_ACCOUNT_JSON: secretish });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(EnvValidationError);
+      expect((err as EnvValidationError).message).not.toContain('TOP-SECRET-VALUE');
+      expect((err as EnvValidationError).issues[0]).toContain('GOOGLE_SERVICE_ACCOUNT_JSON');
+    }
+  });
+});
 
 describe('parseEnv', () => {
   it('applies development defaults for an empty environment', () => {

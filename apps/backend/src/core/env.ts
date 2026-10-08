@@ -27,6 +27,33 @@ function splitList(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+export interface ServiceAccountCredentials {
+  type: 'service_account';
+  project_id: string;
+  client_email: string;
+  private_key: string;
+  [key: string]: unknown;
+}
+
+// GOOGLE_SERVICE_ACCOUNT_JSON carries the service-account key itself, as raw JSON or as base64 of that JSON, for
+// hosts that only accept environment variables. Returns null for anything that is not a service-account key.
+export function parseServiceAccountJson(value: string): ServiceAccountCredentials | null {
+  const text = value.trim().startsWith('{') ? value : Buffer.from(value, 'base64').toString('utf8');
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const key = parsed as Record<string, unknown>;
+    const ok =
+      key.type === 'service_account' &&
+      typeof key.project_id === 'string' &&
+      typeof key.client_email === 'string' &&
+      typeof key.private_key === 'string';
+    return ok ? (key as ServiceAccountCredentials) : null;
+  } catch {
+    return null;
+  }
+}
+
 const nonEmpty = z.string().trim().min(1);
 
 const envSchema = z
@@ -60,11 +87,20 @@ const envSchema = z
       .default('retailerstudio'),
     GOOGLE_CLOUD_PROJECT: nonEmpty.optional(),
     GOOGLE_APPLICATION_CREDENTIALS: nonEmpty.optional(),
+    GOOGLE_SERVICE_ACCOUNT_JSON: nonEmpty.optional(),
     GEMINI_API_KEY: nonEmpty.optional(),
     GENERATION_CONFIG_PATH: nonEmpty.optional(),
     LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   })
   .superRefine((env, ctx) => {
+    if (env.GOOGLE_SERVICE_ACCOUNT_JSON !== undefined && parseServiceAccountJson(env.GOOGLE_SERVICE_ACCOUNT_JSON) === null) {
+      // The value is a secret, so it is never echoed back.
+      ctx.addIssue({
+        code: 'custom',
+        message: 'must be the service-account key JSON, raw or base64 (the value is not shown)',
+        path: ['GOOGLE_SERVICE_ACCOUNT_JSON'],
+      });
+    }
     if (env.NODE_ENV !== 'production') return;
     if (!env.PUBLIC_BASE_URL.startsWith('https://')) {
       ctx.addIssue({
