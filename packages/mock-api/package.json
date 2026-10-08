@@ -1,0 +1,29 @@
+{
+  "name": "@rs/mock-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Retailer Studio in-memory mock of the client Api (fixtures, uploads, clock-driven batches). Consumed as TypeScript source by the mobile app and the embedded web app.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
+  },
+  "dependencies": {
+    "@rs/shared": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
+  }
+}

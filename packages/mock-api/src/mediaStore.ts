@@ -1,5 +1,4 @@
-import type { MediaObject, UploadsRequest, UploadsResponse } from '@rs/shared';
-import { ApiError } from '../types';
+import { ApiError, type MediaObject, type UploadsRequest, type UploadsResponse } from '@rs/shared';
 import { SAMPLE_VIDEO_URL, objectId, picture } from './util';
 
 // Reference uploads in mock mode. The staged target is mock://staged-upload; the app replaces the multipart

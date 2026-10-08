@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@rs/mock-api": "workspace:*",
     "@rs/shared": "workspace:*",
     "@tanstack/react-query": "5.104.1",
     "next": "16.4.0",

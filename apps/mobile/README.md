@@ -21,7 +21,7 @@ Only `EXPO_PUBLIC_*` values reach the app. Never put secrets here.
 
 ## Mock mode
 
-With `EXPO_PUBLIC_API_MOCK=true` the API client is replaced by the in-memory fixtures in `src/api/mock/` (see [Feature screens](#feature-screens) for the whole create-batch flow).
+With `EXPO_PUBLIC_API_MOCK=true` the API client is replaced by the in-memory fixtures of the `@rs/mock-api` workspace package (`packages/mock-api`, re-exported by `src/api/mock/`; see [Feature screens](#feature-screens) for the whole create-batch flow).
 
 - Login keeps its normal validation but skips the browser: the domain field starts as `mock-store`, a login code is fabricated, and the mock `POST /auth/exchange` returns a session for "Mock Store". Login, tabs, Account and Log out all work without a backend.
 - The mock `refresh`, `logout` and `me` are served too, so the refresh token kept in secure storage restores the session on the next app start.

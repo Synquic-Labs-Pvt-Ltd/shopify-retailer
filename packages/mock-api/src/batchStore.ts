@@ -1,17 +1,17 @@
-import type {
-  BatchDelay,
-  BatchDetail,
-  BatchItemView,
-  BatchJobView,
-  BatchSummary,
-  CreateBatchInput,
-  ItemStatus,
-  JobStatus,
-  JobType,
-  MediaObject,
-  ReferenceMode,
+import {
+  ApiError,
+  type BatchDelay,
+  type BatchDetail,
+  type BatchItemView,
+  type BatchJobView,
+  type BatchSummary,
+  type CreateBatchInput,
+  type ItemStatus,
+  type JobStatus,
+  type JobType,
+  type MediaObject,
+  type ReferenceMode,
 } from '@rs/shared';
-import { ApiError } from '../types';
 import { PRODUCTS } from './fixtures';
 import { IMAGES_PER_PRODUCT, SAMPLE_VIDEO_URL, VIDEOS_PER_PRODUCT, objectId, picture, productGid } from './util';
 
@@ -33,7 +33,7 @@ const RETRY_QUEUED_MS = 800;
 const RETRY_RUN_MS = 5_000;
 const DELAY_FROM_MS = 3_500;
 const DELAY_UNTIL_MS = 9_000;
-const MAX_ACTIVE_BATCHES = 3;
+export const MAX_ACTIVE_BATCHES = 3;
 const SHOT_TITLES = ['Hero shot', 'Detail close-up', 'Slow push-in'] as const;
 const ACTIVE_ITEM_STATUSES: readonly ItemStatus[] = ['pending', 'planning', 'generating'];
 const MODES: readonly ReferenceMode[] = ['common_only', 'own_plus_common', 'own_only'];

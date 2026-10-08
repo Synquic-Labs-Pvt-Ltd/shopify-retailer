@@ -248,6 +248,9 @@ importers:
       '@react-navigation/native-stack':
         specifier: 7.20.0
         version: 7.20.0(d71d526f1b6f960f7b1f3c9725936db4)
+      '@rs/mock-api':
+        specifier: workspace:*
+        version: link:../../packages/mock-api
       '@rs/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -345,6 +348,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@rs/mock-api':
+        specifier: workspace:*
+        version: link:../../packages/mock-api
       '@rs/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -379,6 +385,25 @@ importers:
       '@types/react-dom':
         specifier: 19.2.7
         version: 19.2.7(@types/react@19.2.18)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.3.3
+        version: 8.3.3(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@22.20.5)(vite@8.3.3(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/mock-api:
+    dependencies:
+      '@rs/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
