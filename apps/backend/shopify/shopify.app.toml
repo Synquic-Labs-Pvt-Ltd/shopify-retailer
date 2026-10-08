@@ -1,41 +1,28 @@
-# Retailer Studio Shopify app configuration (SPEC 8.1).
-# Validated against https://shopify.dev/docs/apps/build/cli-for-apps/app-configuration (October 2026).
-#
-# Before `shopify app deploy`, replace:
-#   REPLACE_WITH_CLIENT_ID          the Client ID from the Dev Dashboard
-#   REPLACE_WITH_WEB_ORIGIN         the host of the embedded web app (apps/web), for example the cloudflared tunnel host
-#   REPLACE_WITH_PUBLIC_BASE_URL    the host of PUBLIC_BASE_URL (the backend). It may be the same host as the web origin
-#                                   when the web app fronts the backend.
+# Retailer Studio Shopify app configuration, live backend-only setup (SPEC 8.1, docs/DEPLOY.md).
+# The backend is the app: Shopify opens application_url (the backend landing page, which starts the OAuth install) and
+# the mobile app logs in with the authorization code grant against the same backend. Deploy from this folder:
+#   shopify auth login
+#   shopify app deploy
+# The embedded web app has its own file, embedded/shopify.app.toml. Switch to it when apps/web is deployed.
 #
 # Keep in sync with the backend env:
 #   access_scopes.scopes   = SHOPIFY_SCOPES
 #   webhooks.api_version   = SHOPIFY_API_VERSION
 #   auth.redirect_urls     = PUBLIC_BASE_URL + /auth/shopify/callback
 #
-# Embedded app (embedded = true): Shopify opens application_url inside the Shopify admin (an iframe) and the web app
-# signs in with App Bridge session tokens. The backend accepts them as bearer tokens and trades one for an offline
-# access token (token exchange) the first time a shop shows up, so no redirect-based OAuth happens in the admin.
-# The mobile app does not change: it still logs in with the authorization code grant against the backend, which is
-# why auth.redirect_urls stays. Scopes use managed installation (no use_legacy_install_flow), so Shopify installs the
-# app and grants the scopes above when the merchant opens it.
-#
-# Webhook uri values below are relative, and Shopify resolves them against application_url. The web origin therefore
-# has to proxy /webhooks/shopify (raw body, headers untouched) to the backend. It also has to proxy /auth/shopify/*
-# when PUBLIC_BASE_URL is the web origin. Put an absolute backend URL in uri instead if the web origin cannot proxy.
-#
-# Distribution (public, unlisted) is chosen in the Dev Dashboard, not in this file.
-# The first `shopify app deploy` asks whether to include this configuration; answer "Yes, always".
+# Webhook uri values are relative and Shopify resolves them against application_url, which is the backend here.
+# Scopes use managed installation (no use_legacy_install_flow). Distribution (public, unlisted) is set in the Dev Dashboard.
 
-client_id = "REPLACE_WITH_CLIENT_ID"
+client_id = "a8fb46c0913fdaa1de8c7052c1bbbca5"
 name = "Retailer Studio"
-application_url = "https://REPLACE_WITH_WEB_ORIGIN/"
-embedded = true
+application_url = "https://shopify-retailer.synquic.tech/"
+embedded = false
 
 [access_scopes]
 scopes = "read_products,read_files,write_files"
 
 [auth]
-redirect_urls = ["https://REPLACE_WITH_PUBLIC_BASE_URL/auth/shopify/callback"]
+redirect_urls = ["https://shopify-retailer.synquic.tech/auth/shopify/callback"]
 
 [webhooks]
 api_version = "2026-10"
