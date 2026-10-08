@@ -69,6 +69,8 @@ const envSchema = z
       .string()
       .regex(/^mongodb(\+srv)?:\/\//, 'must start with mongodb:// or mongodb+srv://')
       .default('mongodb://127.0.0.1:27017/retailer-studio'),
+    // Database used when MONGODB_URI names none (hosts that inject a bare connection string).
+    MONGODB_DB_NAME: nonEmpty.optional(),
     JWT_SECRET: z.string().min(32, 'must be at least 32 characters').default(DEV_DEFAULTS.JWT_SECRET),
     TOKEN_ENC_KEY: z
       .string()
@@ -121,6 +123,15 @@ const envSchema = z
   });
 
 export type Env = z.output<typeof envSchema>;
+
+// The database to connect to: the one named in MONGODB_URI, else MONGODB_DB_NAME, else retailer-studio. Hosts that inject a
+// connection string without a database (for example Synq's Mongo app: mongodb://user:pass@mongo:27017/) therefore still
+// get a dedicated database instead of MongoDB's default "test". Returns undefined when the URI already names one.
+export function mongoDbName(env: { MONGODB_URI: string; MONGODB_DB_NAME?: string | undefined }): string | undefined {
+  const match = /^mongodb(?:\+srv)?:\/\/[^/]+\/([^/?#]*)/.exec(env.MONGODB_URI);
+  const named = (match?.[1] ?? '').length > 0;
+  return named ? undefined : (env.MONGODB_DB_NAME ?? 'retailer-studio');
+}
 
 export class EnvValidationError extends Error {
   readonly issues: string[];

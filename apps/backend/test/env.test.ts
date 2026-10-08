@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEV_DEFAULTS, EnvValidationError, parseEnv, parseServiceAccountJson } from '../src/core/env';
+import { DEV_DEFAULTS, EnvValidationError, mongoDbName, parseEnv, parseServiceAccountJson } from '../src/core/env';
 
 const productionEnv = {
   NODE_ENV: 'production',
@@ -16,6 +16,25 @@ const serviceAccount = {
   client_email: 'svc@demo-project.iam.gserviceaccount.com',
   private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
 };
+
+describe('mongoDbName', () => {
+  it('keeps the database named in the URI', () => {
+    expect(mongoDbName({ MONGODB_URI: 'mongodb://u:p@mongo:27017/studio?authSource=admin' })).toBeUndefined();
+    expect(mongoDbName({ MONGODB_URI: 'mongodb+srv://u:p@cluster.example.net/prod?retryWrites=true' })).toBeUndefined();
+  });
+
+  it('falls back to MONGODB_DB_NAME, then retailer-studio, when the URI names none', () => {
+    for (const uri of ['mongodb://root:pw@mongo:27017/', 'mongodb://root:pw@mongo:27017', 'mongodb://root:pw@mongo:27017/?authSource=admin', 'mongodb+srv://u:p@cluster.example.net/?retryWrites=true']) {
+      expect(mongoDbName({ MONGODB_URI: uri })).toBe('retailer-studio');
+      expect(mongoDbName({ MONGODB_URI: uri, MONGODB_DB_NAME: 'custom' })).toBe('custom');
+    }
+  });
+
+  it('accepts Synq style bare connection strings in production validation', () => {
+    const env = parseEnv({ ...productionEnv, MONGODB_URI: 'mongodb://root:secret@mongo:27017/' });
+    expect(mongoDbName(env)).toBe('retailer-studio');
+  });
+});
 
 describe('GOOGLE_SERVICE_ACCOUNT_JSON', () => {
   it('accepts the key as raw JSON or as base64', () => {

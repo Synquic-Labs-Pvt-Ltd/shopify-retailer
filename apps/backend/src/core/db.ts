@@ -15,8 +15,8 @@ export function getDbState(): DbState {
   return READY_STATES[mongoose.connection.readyState] ?? 'uninitialized';
 }
 
-export async function connectDb(uri: string, logger: Logger): Promise<void> {
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000 });
+export async function connectDb(uri: string, logger: Logger, dbName?: string): Promise<void> {
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 5_000, ...(dbName === undefined ? {} : { dbName }) });
   logger.info('mongo connected');
 }
 
@@ -32,12 +32,12 @@ function sleep(ms: number): Promise<void> {
 export async function connectDbWithRetry(
   uri: string,
   logger: Logger,
-  options: { retryMs?: number; signal?: AbortSignal } = {},
+  options: { retryMs?: number; signal?: AbortSignal; dbName?: string } = {},
 ): Promise<void> {
   const retryMs = options.retryMs ?? 5_000;
   while (options.signal?.aborted !== true) {
     try {
-      await connectDb(uri, logger);
+      await connectDb(uri, logger, options.dbName);
       return;
     } catch (err) {
       logger.error({ err }, `mongo connect failed, retrying in ${retryMs} ms`);

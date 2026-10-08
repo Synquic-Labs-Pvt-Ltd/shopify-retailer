@@ -3,7 +3,7 @@ import { createApp } from './app';
 import { createContainer } from './container';
 import { createConfigService } from './core/config';
 import { connectDbWithRetry, disconnectDb } from './core/db';
-import { EnvValidationError, loadDotEnv, parseEnv } from './core/env';
+import { EnvValidationError, loadDotEnv, mongoDbName, parseEnv } from './core/env';
 import { createLogger } from './core/logger';
 
 async function main(): Promise<void> {
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   const runsWorker = env.ROLE === 'worker' || env.ROLE === 'all';
   // The HTTP server is already up so /health answers while Mongo is down. The queue starts once Mongo is connected.
-  void connectDbWithRetry(env.MONGODB_URI, logger, { signal: abort.signal }).then(async () => {
+  void connectDbWithRetry(env.MONGODB_URI, logger, { signal: abort.signal, dbName: mongoDbName(env) }).then(async () => {
     await container.media.ensureIndexes();
     await container.batches.ensureIndexes();
     if (runsWorker && !abort.signal.aborted) {
