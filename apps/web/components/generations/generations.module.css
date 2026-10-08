@@ -1,0 +1,170 @@
+/* Small pieces Polaris web components do not cover: media tiles, skeleton bars and the viewer stage. */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 140px);
+  gap: 12px;
+}
+
+.tile {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 140px;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e3e3e3;
+  font: inherit;
+}
+
+button.tile {
+  cursor: pointer;
+}
+
+button.tile:hover {
+  filter: brightness(0.94);
+}
+
+button.tile:focus-visible {
+  outline: 2px solid #005bd3;
+  outline-offset: 2px;
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(26, 26, 26, 0.7);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.pending {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 8px 10px;
+  color: #616161;
+  font-size: 11px;
+  font-weight: 550;
+  text-align: center;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  background: #fee8eb;
+  box-shadow: inset 0 0 0 1px #fed1d7;
+  color: #8e0b21;
+  text-align: center;
+}
+
+.failedTitle {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+}
+
+.failedText {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.skeleton {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: #e3e3e3;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: min(66vh, 640px);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+.media {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.viewerBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.counter {
+  min-width: 56px;
+  color: #616161;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending,
+  .skeleton {
+    animation: none;
+  }
+}
