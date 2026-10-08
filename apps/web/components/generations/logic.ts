@@ -11,8 +11,9 @@ import {
 } from '@rs/shared';
 import { plural } from '@/lib/batch/format';
 import { usableOutputs, type ResultTileModel, type UsableOutput } from '@/lib/batch/outputs';
+import { archiveFileName, planArchive, type ArchiveFile, type ArchiveGroup } from '@/lib/archive';
 import { sanitizeFilename } from '@/lib/download-policy';
-import type { DownloadItem, DownloadOutcome, DownloadSummary } from '@/lib/download';
+import type { DownloadOutcome, ZipDownloadResult } from '@/lib/download';
 
 // Pure rules of the Generations pages: list filter, labels, file names, viewer navigation and toast texts.
 
@@ -131,21 +132,48 @@ export function outputFilename(productTitle: string, media: UsableOutput, index:
   return sanitizeFilename(`${product}-${shot}-${index}.${extension}`, `${media.mediaType}-${index}.${extension}`);
 }
 
-export function downloadItemsOf(item: BatchItemView): DownloadItem[] {
-  return usableOutputs(item).map((media, position) => ({
-    url: media.url,
-    filename: outputFilename(item.title, media, position + 1),
-  }));
+// The outputs of a product, named like the single downloads, for the folder of that product in a zip.
+export function archiveGroupOf(item: BatchItemView): ArchiveGroup {
+  return {
+    title: item.title,
+    files: usableOutputs(item).map((media, position) => ({
+      url: media.url,
+      filename: outputFilename(item.title, media, position + 1),
+    })),
+  };
 }
 
-export function downloadItemsOfBatch(batch: Pick<BatchDetail, 'items'>): DownloadItem[] {
-  return batch.items.flatMap(downloadItemsOf);
+// Every ready output of the batch, in a folder per product.
+export function batchArchiveFiles(batch: Pick<BatchDetail, 'items'>): ArchiveFile[] {
+  return planArchive(batch.items.map(archiveGroupOf));
 }
 
-export const downloadAllLabel = (count: number): string => `Download all (${count})`;
+// Every ready output of one product, in a folder named after it.
+export function productArchiveFiles(item: BatchItemView): ArchiveFile[] {
+  return planArchive([archiveGroupOf(item)]);
+}
 
-// done files are finished while the next one is being saved: "Saving 2 of 6".
-export const savingLabel = (done: number, total: number): string => `Saving ${Math.min(done + 1, total)} of ${total}`;
+export const DOWNLOAD_ALL_LABEL = 'Download all (.zip)';
+export const DOWNLOAD_PRODUCT_LABEL = 'Download (.zip)';
+
+// The file being fetched is the one after those done: "Preparing 4 of 9 files...".
+export const archiveProgressLabel = (done: number, total: number): string =>
+  `Preparing ${Math.min(done + 1, total)} of ${total} files...`;
+
+// A zip being built: for the whole batch (scope BATCH_SCOPE) or for the product with the item id as scope.
+export const BATCH_SCOPE = 'batch';
+
+export interface ArchiveProgress {
+  scope: string;
+  // Files fetched (or skipped) so far, and files in all.
+  done: number;
+  total: number;
+}
+
+// The label for the button of a scope while its zip is built, or null when the running zip is another one.
+export function zipProgressOf(archive: ArchiveProgress | null, scope: string): string | null {
+  return archive !== null && archive.scope === scope ? archiveProgressLabel(archive.done, archive.total) : null;
+}
 
 export interface ToastText {
   message: string;
@@ -163,10 +191,35 @@ export function singleDownloadToast(outcome: DownloadOutcome): ToastText {
   }
 }
 
-export function downloadSummaryToast({ saved, failed }: DownloadSummary): ToastText {
-  if (failed === 0) return { message: `Saved ${plural(saved, 'file')}`, isError: false };
-  if (saved === 0) return { message: 'Could not save the files. Try again.', isError: true };
-  return { message: `Saved ${saved}, ${failed} failed`, isError: true };
+const LISTED_FAILURES = 3;
+
+// "a.jpg, b.jpg and 2 more"
+function listNames(paths: readonly string[]): string {
+  const names = paths.slice(0, LISTED_FAILURES).map(archiveFileName);
+  const rest = paths.length - names.length;
+  return rest > 0 ? `${names.join(', ')} and ${rest} more` : names.join(', ');
+}
+
+// The toast after "Download (.zip)", or null when the merchant left the page and nothing is to be said. Files that
+// could not be fetched are named, so a partly filled zip does not go unnoticed.
+export function archiveToast(result: ZipDownloadResult, archiveName: string): ToastText | null {
+  const { outcome, added, total, skipped } = result;
+  switch (outcome) {
+    case 'cancelled':
+      return null;
+    case 'too_large':
+      return { message: 'These files are too large for one zip. Download fewer products at a time.', isError: true };
+    case 'failed':
+      return { message: 'Could not download the files. Try again.', isError: true };
+    case 'opened':
+      return { message: 'Could not save the zip, it was opened in a new tab', isError: false };
+    case 'saved':
+      if (skipped.length === 0) return { message: `Saved ${archiveName} with ${plural(added, 'file')}`, isError: false };
+      return {
+        message: `Saved ${added} of ${total} files in ${archiveName}. Could not download ${listNames(skipped)}.`,
+        isError: true,
+      };
+  }
 }
 
 // The media viewer shows the outputs of one product. It is addressed by media id, so a poll that adds an output

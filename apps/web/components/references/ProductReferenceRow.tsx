@@ -16,8 +16,8 @@ interface ProductReferenceRowProps {
   onRemoveProduct: () => void;
 }
 
-// One selected product: picture, title, how its references resolve, its own slots and the controls to add
-// references or take the product out of this generation.
+// One selected product: picture, title, how its references resolve, its own photo slots and the controls to add
+// photos or take the product out of this generation.
 export function ProductReferenceRow({
   resolution,
   flaggedByServer,
@@ -38,10 +38,10 @@ export function ProductReferenceRow({
           <s-stack direction="inline">
             <s-badge tone={badge.tone}>{badge.label}</s-badge>
           </s-stack>
-          <SlotList label={`References of ${product.title}`} references={own} onRetry={onRetry} onRemove={onRemove} />
+          <SlotList label={`Product photos of ${product.title}`} references={own} onRetry={onRetry} onRemove={onRemove} />
         </s-stack>
         <s-stack direction="inline" alignItems="center" gap="small-200">
-          <AddFilesButton label="Add references" accessibilityLabel={`Add references to ${product.title}`} onFiles={onFiles} />
+          <AddFilesButton label="Add product photos" accessibilityLabel={`Add product photos to ${product.title}`} onFiles={onFiles} />
           <s-button
             variant="tertiary"
             icon="x"

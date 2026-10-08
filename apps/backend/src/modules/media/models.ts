@@ -38,6 +38,8 @@ export interface MediaAssetDoc {
   batchItemId?: Types.ObjectId;
   sourceJobId?: Types.ObjectId;
   shotTitle?: string;
+  // Set once the output was added to its product (fileUpdate referencesToAdd).
+  attachedAt?: Date;
   error?: { code?: string; message?: string };
   readyAt?: Date;
   deletedAt?: Date;
@@ -75,6 +77,7 @@ const mediaAssetSchema = new Schema<MediaAssetDoc>(
     batchItemId: { type: objectId },
     sourceJobId: { type: objectId },
     shotTitle: { type: String },
+    attachedAt: { type: Date },
     error: { code: { type: String }, message: { type: String } },
     readyAt: { type: Date },
     deletedAt: { type: Date },

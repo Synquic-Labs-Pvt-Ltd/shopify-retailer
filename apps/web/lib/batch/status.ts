@@ -59,16 +59,19 @@ export function batchProgress(counts: BatchCounts): number {
   return Math.min(1, finished / counts.jobsTotal);
 }
 
-const DELAY_PREFIX: Record<LanePauseReason, string> = {
-  rate_limited: 'Provider busy',
-  daily_quota: 'Daily limit reached',
-  provider_unavailable: 'Provider unavailable',
-  auth_error: 'Provider unavailable',
+// SPEC 11.2: "Provider busy, resumes around {time}." for a rate limit. The other pauses say why generation waits
+// and that nothing needs to be done: the jobs go on by themselves.
+const DELAY_TEXT: Record<LanePauseReason, (time: string) => string> = {
+  rate_limited: (time) => `Provider busy, resumes around ${time}.`,
+  daily_quota: (time) => `Daily generation limit reached. Generation continues automatically around ${time}.`,
+  provider_unavailable: (time) =>
+    `The AI service is unavailable right now. Jobs keep retrying automatically; next check around ${time}.`,
+  auth_error: (time) =>
+    `The AI service is unavailable right now. Jobs keep retrying automatically; next check around ${time}.`,
 };
 
-// SPEC 11.2: "Provider busy, resumes around {time}".
 export function delayMessage(reason: LanePauseReason, resumesAtLabel: string): string {
-  return `${DELAY_PREFIX[reason]}, resumes around ${resumesAtLabel}.`;
+  return DELAY_TEXT[reason](resumesAtLabel);
 }
 
 // The text of the delay banner of a batch detail, with the resume time in the viewer's local time.

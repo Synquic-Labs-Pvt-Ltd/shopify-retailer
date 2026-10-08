@@ -22,10 +22,11 @@
   },
   "ai": {
     "image": {
-      "maxProductImages": 3,
-      "maxStyleReferences": 3
+      "maxProductImages": 4,
+      "maxStyleReferences": 2
     },
     "planner": {
+      "maxProductImages": 10,
       "maxReferenceImages": 6,
       "maxReferenceVideos": 2,
       "temperature": 0.6

@@ -8,7 +8,7 @@ function Bar({ width, height = '14px' }: { width: Size; height?: Size }) {
 export function GenerateSkeleton() {
   return (
     <s-page heading="New generation">
-      <s-section heading="Common references">
+      <s-section heading="Style references">
         <s-stack gap="base">
           <Bar width="320px" />
           <Bar width="100%" height="100px" />

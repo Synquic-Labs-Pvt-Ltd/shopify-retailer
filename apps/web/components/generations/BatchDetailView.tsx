@@ -2,22 +2,40 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { errorMessage } from '@/lib/api/errors';
-import { useBatch, useCancelBatch, useRetryFailed } from '@/lib/api/hooks';
+import { pollNotice, useAttachMedia, useBatch, useCancelBatch, useRetryFailed } from '@/lib/api/hooks';
+import { batchArchiveName, productArchiveName } from '@/lib/archive';
 import { plural, relativeTime } from '@/lib/batch/format';
 import { showToast } from '@/lib/shopify';
+import {
+  BATCH_ATTACHED_LABEL,
+  BATCH_ATTACH_LABEL,
+  attachErrorNotice,
+  attachNotice,
+  attachToast,
+  attachableItems,
+  batchAttachState,
+  titleResolver,
+  type AttachNotice,
+} from './attach';
+import { ATTACH_MODAL_ID, AttachModal } from './AttachModal';
 import { CANCEL_MODAL_ID, CancelModal } from './CancelModal';
+import { ConnectionNotice } from './ConnectionNotice';
 import { DelayBanner } from './DelayBanner';
 import { ItemSection } from './ItemSection';
 import {
   canCancelBatch,
   canRetryFailed,
-  downloadItemsOfBatch,
+  batchArchiveFiles,
   isBatchNotFound,
   isValidBatchId,
   outputsPerProduct,
+  productArchiveFiles,
+  zipProgressOf,
+  BATCH_SCOPE,
   type ViewerTarget,
 } from './logic';
 import { MediaViewer } from './MediaViewer';
+import { NoticeBanner } from './NoticeBanner';
 import { BatchStatusBadge } from './StatusBadge';
 import { SummarySection } from './SummarySection';
 import { useDownloads } from './useDownloads';
@@ -72,18 +90,23 @@ function Loading() {
 }
 
 // SPEC 16.2 BatchDetail and ItemResults: every product with its outputs as they arrive, polled until the batch
-// ends. Outputs open in the media viewer; "Download all" saves every ready output.
+// ends. Outputs open in the media viewer; "Download all (.zip)" saves every ready output in one zip with a folder per
+// product, and "Add to products" puts the ready outputs on their products in the Shopify store.
 export function BatchDetailView({ id }: { id: string }) {
   const validId = isValidBatchId(id);
   const query = useBatch(validId ? id : '');
   const cancel = useCancelBatch();
   const retry = useRetryFailed();
+  const attach = useAttachMedia();
   const downloads = useDownloads();
   const [target, setTarget] = useState<ViewerTarget | null>(null);
+  // What the running add request is for: BATCH_SCOPE, or the id of one product.
+  const [attaching, setAttaching] = useState<string | null>(null);
+  const [attachBanner, setAttachBanner] = useState<AttachNotice | null>(null);
   const batch = query.data;
 
-  const { saveAll } = downloads;
-  const downloadItems = useMemo(() => (batch === undefined ? [] : downloadItemsOfBatch(batch)), [batch]);
+  const { saveArchive } = downloads;
+  const archiveFiles = useMemo(() => (batch === undefined ? [] : batchArchiveFiles(batch)), [batch]);
   const viewerItem = useMemo(
     () => (target === null ? undefined : batch?.items.find((candidate) => candidate.id === target.itemId)),
     [batch, target],
@@ -94,7 +117,11 @@ export function BatchDetailView({ id }: { id: string }) {
     (mediaId: string) => setTarget((current) => (current === null ? null : { ...current, mediaId })),
     [],
   );
-  const downloadAll = useCallback(() => void saveAll(downloadItems), [saveAll, downloadItems]);
+  const downloadAll = useCallback(
+    () => void saveArchive(BATCH_SCOPE, archiveFiles, batchArchiveName(id)),
+    [saveArchive, archiveFiles, id],
+  );
+  const dismissAttachBanner = useCallback(() => setAttachBanner(null), []);
 
   if (!validId || (batch === undefined && query.isError && isBatchNotFound(query.error))) return <NotFound />;
   if (batch === undefined) {
@@ -112,7 +139,33 @@ export function BatchDetailView({ id }: { id: string }) {
       onError: (error) => showToast(errorMessage(error, 'Could not retry the failed jobs.'), true),
     });
 
+  // Adds the ready outputs of the given products to their Shopify products.
+  const attachMedia = (scope: string, itemIds: string[]) => {
+    const titleOf = titleResolver(batch);
+    setAttaching(scope);
+    setAttachBanner(null);
+    attach.mutate(
+      { id, itemIds },
+      {
+        onSuccess: (response) => {
+          const toast = attachToast(response, titleOf);
+          showToast(toast.message, toast.isError);
+          setAttachBanner(attachNotice(response, titleOf));
+        },
+        onError: (error) => {
+          showToast(errorMessage(error, 'Could not add the outputs to the products.'), true);
+          setAttachBanner(attachErrorNotice(error));
+        },
+        onSettled: () => setAttaching(null),
+      },
+    );
+  };
+
+  const connection = pollNotice({ hasData: true, error: query.error, failureReason: query.failureReason });
   const expected = outputsPerProduct(batch);
+  const attachable = attachableItems(batch);
+  const batchAttach = batchAttachState(batch);
+  const working = downloads.saving || attaching !== null;
   const startedText =
     batch.finishedAt === null
       ? `Started ${relativeTime(batch.createdAt)}`
@@ -132,14 +185,26 @@ export function BatchDetailView({ id }: { id: string }) {
             Retry failed
           </s-button>
         ) : null}
+        {batchAttach === 'none' ? null : (
+          <s-button
+            slot="secondary-actions"
+            commandFor={ATTACH_MODAL_ID}
+            command="--show"
+            loading={attaching === BATCH_SCOPE}
+            disabled={batchAttach === 'done' || working}
+          >
+            {batchAttach === 'done' ? BATCH_ATTACHED_LABEL : BATCH_ATTACH_LABEL}
+          </s-button>
+        )}
 
         <s-stack direction="inline" alignItems="center" gap="small-200">
           <BatchStatusBadge status={batch.status} />
           <s-text color="subdued">{startedText}</s-text>
         </s-stack>
+        {connection === 'reconnecting' ? <ConnectionNotice /> : null}
 
         {batch.delay === null ? null : <DelayBanner delay={batch.delay} />}
-        {query.isError ? (
+        {connection === 'stopped' ? (
           <s-banner tone="warning" heading="Could not refresh progress">
             What you see may be out of date.
             <s-button slot="secondary-actions" onClick={() => void query.refetch()}>
@@ -148,20 +213,36 @@ export function BatchDetailView({ id }: { id: string }) {
           </s-banner>
         ) : null}
 
+        {attachBanner === null ? null : <NoticeBanner notice={attachBanner} onDismiss={dismissAttachBanner} />}
+
         {batch.items.map((item) => (
-          <ItemSection key={item.id} item={item} expected={expected} onOpen={setTarget} />
+          <ItemSection
+            key={item.id}
+            item={item}
+            expected={expected}
+            busy={working}
+            zipProgress={zipProgressOf(downloads.archive, item.id)}
+            attaching={attaching === item.id}
+            onOpen={setTarget}
+            onDownload={() => void saveArchive(item.id, productArchiveFiles(item), productArchiveName(item.title))}
+            onAttach={() => attachMedia(item.id, [item.id])}
+          />
         ))}
 
         <SummarySection
           batch={batch}
-          downloadCount={downloadItems.length}
-          saving={downloads.saving}
-          bulk={downloads.bulk}
+          downloadCount={archiveFiles.length}
+          saving={working}
+          archive={downloads.archive?.scope === BATCH_SCOPE ? downloads.archive : null}
           onDownloadAll={downloadAll}
         />
       </s-page>
 
       <CancelModal onConfirm={cancelBatch} />
+      <AttachModal
+        productCount={attachable.length}
+        onConfirm={() => attachMedia(BATCH_SCOPE, attachable.map((item) => item.id))}
+      />
       <MediaViewer
         item={viewerItem}
         mediaId={target?.mediaId ?? null}

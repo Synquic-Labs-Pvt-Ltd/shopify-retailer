@@ -19,28 +19,37 @@ import {
   planCounts,
   productImageSources,
   referenceSources,
+  splitReferences,
   type JobRun,
   type Runtime,
 } from './runtime';
 
-// SPEC 10.2: up to 3 product images go to the planner.
-const MAX_PLANNER_PRODUCT_IMAGES = 3;
+// A product video the merchant uploaded for one product (it shows the exact product in motion).
+const MAX_PLANNER_PRODUCT_VIDEOS = 2;
 
 type VideoSource = ReturnType<typeof referenceSources>[number];
 
 interface PlannerInputs {
+  // Every product image up to the planner cap: the planner reads them all to describe the exact product.
   productImages: ImageInput[];
   referenceImages: ImageInput[];
-  videos: VideoSource[];
+  productVideos: VideoSource[];
+  styleVideos: VideoSource[];
 }
 
 async function loadInputs(rt: Runtime, run: JobRun, signal: AbortSignal): Promise<PlannerInputs> {
   const { ctx, config } = run;
+  const split = splitReferences(ctx);
   const [productImages, referenceImages] = await Promise.all([
-    loadImages(rt, productImageSources(ctx.productSnapshot).slice(0, MAX_PLANNER_PRODUCT_IMAGES), signal),
-    loadImages(rt, referenceSources(ctx.references, 'image').slice(0, config.ai.planner.maxReferenceImages), signal),
+    loadImages(rt, productImageSources(ctx).slice(0, config.ai.planner.maxProductImages), signal),
+    loadImages(rt, referenceSources(split.style, 'image').slice(0, config.ai.planner.maxReferenceImages), signal),
   ]);
-  return { productImages, referenceImages, videos: referenceSources(ctx.references, 'video').slice(0, config.ai.planner.maxReferenceVideos) };
+  return {
+    productImages,
+    referenceImages,
+    productVideos: referenceSources(split.own, 'video').slice(0, MAX_PLANNER_PRODUCT_VIDEOS),
+    styleVideos: referenceSources(split.style, 'video').slice(0, config.ai.planner.maxReferenceVideos),
+  };
 }
 
 // The provider rejected the video urls: send the files that are small enough inline and skip the rest.
@@ -70,7 +79,7 @@ async function runPlan(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise
   await rt.batches.markItemPlanning(ctx.shopId, ctx.itemId);
   // Already planned (a retried plan job, or a replay after a lost lease): nothing left to do.
   if (ctx.creativePlan !== null) return { kind: 'succeeded' };
-  if (productImageSources(ctx.productSnapshot).length === 0) return NO_PRODUCT_IMAGES;
+  if (productImageSources(ctx).length === 0) return NO_PRODUCT_IMAGES;
 
   const counts = planCounts(ctx.config);
   const template = rt.getPrompt('planner.system');
@@ -80,14 +89,21 @@ async function runPlan(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise
 
   try {
     const inputs = await loadInputs(rt, run, signal);
-    const call = (referenceVideos: ReferenceVideoInput[]): Promise<AiResult<PlanResponse>> =>
+    const call = (referenceVideos: ReferenceVideoInput[], productVideos: ReferenceVideoInput[]): Promise<AiResult<PlanResponse>> =>
       provider.plan({
         model: ctx.config.models.planner,
         location: ctx.config.locations.planner,
         signal,
         systemPrompt,
         parts: buildPlannerParts(
-          { snapshot: ctx.productSnapshot, productImages: inputs.productImages, referenceImages: inputs.referenceImages, referenceVideos, counts },
+          {
+            snapshot: ctx.productSnapshot,
+            productImages: inputs.productImages,
+            productVideos,
+            referenceImages: inputs.referenceImages,
+            referenceVideos,
+            counts,
+          },
           config,
         ),
         imageCount: counts.imageCount,
@@ -96,11 +112,13 @@ async function runPlan(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise
       });
 
     let warnings: string[] = [];
-    let result = await call(inputs.videos.map((video) => ({ mimeType: video.mimeType, uri: video.url })));
-    if (!result.ok && result.error.kind === 'invalid_request' && inputs.videos.length > 0) {
-      const inline = await inlineVideos(rt, inputs.videos, signal);
-      warnings = inline.warnings;
-      result = await call(inline.inputs);
+    const byUrl = (videos: readonly VideoSource[]): ReferenceVideoInput[] => videos.map((video) => ({ mimeType: video.mimeType, uri: video.url }));
+    let result = await call(byUrl(inputs.styleVideos), byUrl(inputs.productVideos));
+    if (!result.ok && result.error.kind === 'invalid_request' && inputs.styleVideos.length + inputs.productVideos.length > 0) {
+      const style = await inlineVideos(rt, inputs.styleVideos, signal);
+      const product = await inlineVideos(rt, inputs.productVideos, signal);
+      warnings = [...style.warnings, ...product.warnings];
+      result = await call(style.inputs, product.inputs);
     }
     if (!result.ok) return outcomeFromAiError(result.error, audit);
 

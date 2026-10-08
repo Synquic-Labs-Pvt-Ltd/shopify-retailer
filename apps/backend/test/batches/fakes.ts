@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import type { MediaObject, MediaStatus, MediaType, ProductSnapshot } from '@rs/shared';
 import { AppError } from '../../src/core/errors';
 import type { CatalogService } from '../../src/modules/catalog';
-import type { MediaAssetRecord, MediaService, PersistOutputInput } from '../../src/modules/media';
+import type { AttachTarget, MediaAssetRecord, MediaService, PersistOutputInput } from '../../src/modules/media';
 
 // In-memory stand-ins for the catalog and media modules (track E), behind the same interfaces.
 
@@ -55,8 +55,10 @@ export interface ReferenceSpec {
   filename?: string;
 }
 
-export interface FakeMedia extends Pick<MediaService, 'getAssets' | 'getObjects' | 'purgeShop' | 'storage'> {
+export interface FakeMedia extends Pick<MediaService, 'getAssets' | 'getObjects' | 'purgeShop' | 'storage' | 'attachToProducts'> {
   assets: Map<string, MediaAssetRecord>;
+  // Every attachToProducts call, in order.
+  attachCalls: AttachTarget[][];
   persisted: PersistOutputInput[];
   addReference(spec: ReferenceSpec): string;
   // Makes the next persistOutput calls throw.
@@ -87,6 +89,7 @@ export function createFakeMedia(now: () => Date): FakeMedia {
   const bySourceJob = new Map<string, MediaAssetRecord>();
   const persisted: PersistOutputInput[] = [];
   const persistFailures: { count: number; error?: Error } = { count: 0 };
+  const attachCalls: AttachTarget[][] = [];
 
   const ownedBy = (shopId: string, ids: string[]): MediaAssetRecord[] =>
     ids.flatMap((id) => {
@@ -98,6 +101,11 @@ export function createFakeMedia(now: () => Date): FakeMedia {
     assets,
     persisted,
     persistFailures,
+    attachCalls,
+    async attachToProducts(_shopId, targets) {
+      attachCalls.push(targets);
+      return targets.map((target) => ({ productGid: target.productGid, attached: target.mediaIds, alreadyAttached: [], failed: [] }));
+    },
     addReference(spec) {
       const id = new Types.ObjectId().toHexString();
       const mediaType = spec.mediaType ?? 'image';

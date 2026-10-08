@@ -8,6 +8,7 @@ import { LaneStateModel } from '../../src/modules/ratelimit/models';
 import { MONGO_START_TIMEOUT_MS, startTestMongo, type TestMongo } from '../helpers/mongo';
 import { waitFor } from '../queue/kit';
 import { createGate, createKit, prepareIndexes, SHOP_A, USER, type Kit } from './kit';
+import { SAFE_IMAGE_NOTE, SAFE_VIDEO_NOTE } from '../../src/modules/ai/prompts';
 import { dailyQuota, failWith, invalidArgument, overloaded, prepayDepleted, rateLimited, safetyBlocked } from './scripted-ai';
 
 let mongo: TestMongo;
@@ -250,8 +251,27 @@ describe('planner failures never block outputs', () => {
 });
 
 describe('failed outputs', () => {
-  it('fails a safety-blocked image for good: the item is partial and the batch completed_with_errors', async () => {
+  it('retries a safety-blocked image once with the safer presentation (no person, no style references) and keeps the batch complete', async () => {
     kit.ai.hooks.image = (_request, call) => (call === 1 ? failWith(safetyBlocked()) : undefined);
+    const batchId = await batchOf(1);
+    const done = await kit.driveToTerminal(batchId);
+
+    expect(done.status).toBe('completed');
+    expect(done.counts).toMatchObject({ jobsFailed: 0, jobsSucceeded: 4, imagesReady: 2, videosReady: 1 });
+    expect(kit.ai.calls.image).toHaveLength(3);
+    const text = (index: number): string =>
+      (kit.ai.calls.image[index]?.parts ?? []).flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
+    const retry = kit.ai.calls.image.map((_call, index) => text(index)).filter((prompt) => prompt.includes(SAFE_IMAGE_NOTE));
+    expect(retry).toHaveLength(1);
+    expect(retry[0]).not.toMatch(/STYLE REFERENCE \d/);
+    expect(retry[0]).toContain('PRODUCT IMAGE 1');
+    const retried = await JobModel.findOne({ batchId, type: 'image', attempts: 2 }).lean();
+    expect(retried?.renderedPrompt).toContain(SAFE_IMAGE_NOTE);
+  });
+
+  it('fails an image that is blocked twice for good: the item is partial and the batch completed_with_errors', async () => {
+    // Calls 1 and 3 are the same shot, blocked once as planned and once in the safer presentation.
+    kit.ai.hooks.image = (_request, call) => (call === 1 || call === 3 ? failWith(safetyBlocked()) : undefined);
     const batchId = await batchOf(1);
     const done = await kit.driveToTerminal(batchId);
 
@@ -261,10 +281,10 @@ describe('failed outputs', () => {
     expect(done.items[0]?.outputs).toHaveLength(2);
     const failed = done.items[0]?.jobs.filter((j) => j.status === 'failed');
     expect(failed).toEqual([{ type: 'image', outputIndex: expect.any(Number), status: 'failed', errorCode: 'safety_blocked' }]);
-    expect(kit.ai.calls.image).toHaveLength(2);
+    expect(kit.ai.calls.image).toHaveLength(3);
     const failedJob = await JobModel.findOne({ batchId, status: 'failed' }).lean();
-    expect(failedJob).toMatchObject({ attempts: 1, error: { code: 'safety_blocked', retryable: false } });
-    expect(failedJob?.renderedPrompt).toContain('A calm, premium lifestyle scene');
+    expect(failedJob).toMatchObject({ attempts: 2, error: { code: 'safety_blocked', retryable: false } });
+    expect(failedJob?.renderedPrompt).toContain(SAFE_IMAGE_NOTE);
   });
 
   it('fails a batch with no outputs as failed', async () => {
@@ -279,7 +299,7 @@ describe('failed outputs', () => {
   });
 
   it('retry-failed brings a completed_with_errors batch to completed', async () => {
-    kit.ai.hooks.image = (_request, call) => (call === 1 ? failWith(safetyBlocked()) : undefined);
+    kit.ai.hooks.image = (_request, call) => (call === 1 || call === 3 ? failWith(safetyBlocked()) : undefined);
     const batchId = await batchOf(1);
     await kit.driveToTerminal(batchId);
     kit.ai.hooks.image = undefined;
@@ -469,13 +489,27 @@ describe('video polling', () => {
     expect(kit.media.persisted.filter((input) => input.mediaType === 'video').map((input) => input.mimeType)).toEqual(['video/mp4']);
   });
 
-  it('fails the video as safety_blocked when the finished operation was filtered', async () => {
+  it('resubmits a video the provider filtered once, as a person-free orbit, and then succeeds', async () => {
+    kit.ai.hooks.poll = (_request, call) => (call === 1 ? failWith(safetyBlocked()) : undefined);
+    const batchId = await batchOf(1);
+    const done = await kit.driveToTerminal(batchId);
+
+    expect(done.status).toBe('completed');
+    expect(kit.ai.calls.submit).toHaveLength(2);
+    expect(kit.ai.calls.submit[0]?.prompt).not.toContain(SAFE_VIDEO_NOTE);
+    expect(kit.ai.calls.submit[1]?.prompt).toContain(SAFE_VIDEO_NOTE);
+    expect(kit.ai.calls.submit[1]?.prompt).toContain('Camera: slow orbit around the product');
+    expect(await JobModel.findOne({ batchId, type: 'video' }).lean()).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('fails the video as safety_blocked when the finished operation was filtered again in the safer presentation', async () => {
     kit.ai.hooks.poll = () => failWith(safetyBlocked());
     const batchId = await batchOf(1);
     const done = await kit.driveToTerminal(batchId);
     expect(done.status).toBe('completed_with_errors');
     expect(done.items[0]?.jobs.find((j) => j.type === 'video')).toMatchObject({ status: 'failed', errorCode: 'safety_blocked' });
     expect(done.items[0]?.status).toBe('partial');
+    expect(kit.ai.calls.submit).toHaveLength(2);
   });
 
   it('ignores an operation that finishes after the batch was cancelled', async () => {

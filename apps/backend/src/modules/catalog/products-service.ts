@@ -1,17 +1,21 @@
 import { z } from 'zod';
 import { productGidSchema } from '@rs/shared';
-import type { PageInfo, ProductDetail, ProductListQuery, ProductListResponse, ProductSnapshot } from '@rs/shared';
+import type { PageInfo, ProductDetail, ProductListItem, ProductListQuery, ProductListResponse, ProductSnapshot } from '@rs/shared';
 import { AppError } from '../../core/errors';
 import { parseWith } from '../../core/http';
 import type { Logger } from '../../core/logger';
 import type { ShopifyAdminClient } from '../shopify';
 import { toDetail, toListItem, toSnapshot } from './mappers';
 import { PRODUCT_DETAIL_QUERY, PRODUCT_LIST_QUERY, PRODUCT_SNAPSHOTS_QUERY } from './queries';
-import { buildTitleSearch } from './search';
+import { buildProductSearch } from './search';
 import { productDetailDataSchema, productListDataSchema, productSnapshotNodeSchema, productSnapshotsDataSchema } from './shopify-schemas';
 
 // Keeps one nodes() query well under Shopify's single-query cost limit.
 const SNAPSHOT_CHUNK_SIZE = 20;
+
+// A page of the list drops products without an image (they cannot be generated from). When that leaves too few
+// rows, the next Shopify pages are read too, up to this many requests, so a page is rarely short or empty.
+const MAX_LIST_FETCHES = 4;
 
 export interface ProductsServiceOptions {
   admin: ShopifyAdminClient;
@@ -28,16 +32,18 @@ export class ProductsService {
   }
 
   async list(shopId: string, query: ProductListQuery): Promise<ProductListResponse> {
-    const data = await this.run(shopId, PRODUCT_LIST_QUERY, productListDataSchema, {
-      first: query.limit,
-      after: query.cursor ?? null,
-      query: buildTitleSearch(query.q),
-    });
-    const pageInfo: PageInfo = {
-      endCursor: data.products.pageInfo.endCursor,
-      hasNextPage: data.products.pageInfo.hasNextPage,
-    };
-    return { items: data.products.nodes.map(toListItem), pageInfo };
+    const search = buildProductSearch(query.q, query.status);
+    const items: ProductListItem[] = [];
+    let cursor = query.cursor ?? null;
+    let pageInfo: PageInfo = { endCursor: cursor, hasNextPage: false };
+    for (let fetches = 0; fetches < MAX_LIST_FETCHES; fetches += 1) {
+      const data = await this.run(shopId, PRODUCT_LIST_QUERY, productListDataSchema, { first: query.limit, after: cursor, query: search });
+      pageInfo = { endCursor: data.products.pageInfo.endCursor, hasNextPage: data.products.pageInfo.hasNextPage };
+      items.push(...data.products.nodes.map(toListItem).filter((item) => item.imageUrl !== null));
+      cursor = pageInfo.endCursor;
+      if (items.length >= query.limit || !pageInfo.hasNextPage) break;
+    }
+    return { items, pageInfo };
   }
 
   async get(shopId: string, gid: string): Promise<ProductDetail> {

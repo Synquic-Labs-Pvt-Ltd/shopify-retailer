@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { createAggregator } from './aggregation';
+import { createAttachMedia } from './attach';
 import { createControl } from './control';
 import { createBatchCreator } from './create';
 import type { BatchesModule, BatchesModuleDeps, BatchesService } from './index';
@@ -36,6 +37,7 @@ export function createBatchesModule(deps: BatchesModuleDeps): BatchesModule {
   const queries = createQueries({ ...deps, recount });
   const control = createControl({ queue: deps.queue, shops: deps.shops, logger: deps.logger, now, recount });
   const creator = createBatchCreator({ ...deps, now });
+  const attachMedia = createAttachMedia(deps);
 
   async function isMediaInUse(shopId: string, mediaId: string): Promise<boolean> {
     if (!/^[a-f0-9]{24}$/.test(mediaId)) return false;
@@ -59,6 +61,7 @@ export function createBatchesModule(deps: BatchesModuleDeps): BatchesModule {
     getBatch: queries.getBatch,
     cancel: control.cancel,
     retryFailed: control.retryFailed,
+    attachMedia,
     cancelAllForShop: control.cancelAllForShop,
     isMediaInUse,
     getItemContext: items.getItemContext,

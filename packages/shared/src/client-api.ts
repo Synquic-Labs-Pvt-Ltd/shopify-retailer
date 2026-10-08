@@ -1,4 +1,6 @@
 import type {
+  AttachMediaRequest,
+  AttachMediaResponse,
   AuthExchangeRequest,
   AuthLogoutRequest,
   AuthRefreshRequest,
@@ -19,7 +21,7 @@ import type {
   UploadsResponse,
 } from './index';
 
-export type ApiErrorCode = ErrorCode | 'network_error' | 'invalid_response';
+export type ApiErrorCode = ErrorCode | 'network_error' | 'timeout' | 'service_unavailable' | 'invalid_response';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -60,5 +62,7 @@ export interface Api {
     get(id: string): Promise<BatchDetail>;
     cancel(id: string): Promise<BatchSummary>;
     retryFailed(id: string): Promise<BatchSummary>;
+    // Adds the ready outputs to the Shopify products they were made for.
+    attachMedia(id: string, body?: AttachMediaRequest): Promise<AttachMediaResponse>;
   };
 }

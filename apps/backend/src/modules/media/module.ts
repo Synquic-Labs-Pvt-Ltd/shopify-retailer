@@ -1,3 +1,4 @@
+import { createAttacher } from './attach';
 import type { DriverDeps } from './deps';
 import { MediaAssetModel } from './models';
 import { createMediaRouter } from './routes';
@@ -44,7 +45,8 @@ export function createMediaModule(options: MediaModuleOptions): MediaModule {
     delete: (shopId, mediaId) => active().delete(shopId, mediaId),
   };
 
-  const service = createMediaService({ storage, isMediaInUse: options.isMediaInUse ?? (() => Promise.resolve(false)) });
+  const attachToProducts = createAttacher({ admin: options.admin, logger: options.logger, now: deps.now });
+  const service = createMediaService({ storage, attachToProducts, isMediaInUse: options.isMediaInUse ?? (() => Promise.resolve(false)) });
   return {
     service,
     router: createMediaRouter(service, options.requireAuth),

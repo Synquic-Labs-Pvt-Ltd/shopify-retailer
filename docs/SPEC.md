@@ -211,7 +211,8 @@ The web app (apps/web) runs inside the Shopify admin and does not use the redire
   - mediaCount
   - variantsCount
   - The search query string is passed straight through to Shopify search syntax, scoped to title.
-- Product detail and snapshot: id, title, handle, descriptionHtml (stripped to plain text, max 2000 chars), productType, vendor, tags, options (name and values), and the first 5 image media URLs.
+  - Products without an image are never listed (section 26).
+- Product detail and snapshot: id, title, handle, descriptionHtml (stripped to plain text, max 2000 chars), productType, vendor, tags, options (name and values), and up to 12 image media URLs (see section 26, Fidelity and references).
   - Image URLs get a width=1536 parameter so the Shopify CDN resizes them server-side.
 - Throttling: read extensions.cost.throttleStatus on every response.
   - On a THROTTLED error, wait (requested cost minus currently available) divided by restoreRate seconds, then retry. Maximum 3 retries.
@@ -786,7 +787,7 @@ Fields:
 | POST /api/v1/auth/refresh | refreshToken | the same as exchange |
 | POST /api/v1/auth/logout | refreshToken | 204 |
 | GET /api/v1/me | none | user (id, email, firstName, lastName), shop (id, domain, name), generation (imagesPerProduct, videosPerProduct, references limits and mime types, maxProductsPerBatch) |
-| GET /api/v1/products | query q, cursor, limit (default 25, max 50) | items: id, title, handle, status, vendor, productType, imageUrl, mediaCount, variantsCount; pageInfo |
+| GET /api/v1/products | query q, status (active or draft), cursor, limit (default 25, max 50) | items: id, title, handle, status, vendor, productType, imageUrl, mediaCount, variantsCount; pageInfo |
 | GET /api/v1/products/:gid | gid url-encoded | product detail (section 8.5 fields) |
 | POST /api/v1/media/uploads | files: clientId, filename, mimeType, fileSize, durationSec (videos), scope, productGid (scope product) | targets: clientId, mediaId, url, method, parameters (name and value) |
 | POST /api/v1/media/:id/complete | none | the media object |
@@ -797,10 +798,11 @@ Fields:
 | GET /api/v1/batches/:id | none | batch summary plus items (productGid, title, imageUrl, status, referenceMode, outputs as media objects, jobs as type, outputIndex, status, error code) plus delay (reason, resumesAt) or null |
 | POST /api/v1/batches/:id/cancel | none | batch summary |
 | POST /api/v1/batches/:id/retry-failed | none | batch summary |
+| POST /api/v1/batches/:id/attach-media | optional itemIds | per item: itemId, productGid, attached, alreadyAttached, failed, error; totals |
 | GET /health | none | ok, db, worker lastTickAt, paused lanes |
 
 Shapes:
-- Media object: id, role, mediaType, status, url, previewUrl, width, height, durationSec, filename, scope, productGid, shotTitle, createdAt.
+- Media object: id, role, mediaType, status, url, previewUrl, width, height, durationSec, filename, scope, productGid, shotTitle, attachedAt (outputs added to their product), createdAt.
 - Batch summary: id, status, counts, createdAt, finishedAt, coverImageUrl (the first product image), configSnapshot.outputs.
 
 ## 16. Mobile app
@@ -1195,6 +1197,20 @@ This section records where the implementation differs from the text above or add
 - Uninstall cancels every batch of the shop in addition to its jobs. Invalid planner JSON is a retry with code no_output, after which the fallback plan takes over. A product with no images fails its jobs with invalid_request before any provider call.
 - Extra batch fields: coverImageUrl, statsSeq, statsApplied; extra item field: statsApplied.
 - When a finished Veo operation cannot be stored in Shopify, the video job polls the same operation again (bounded by videoMaxWaitMinutes) instead of submitting a new video, because the operation is already billed. If waiting cannot help (Shopify rejected the file, or the shop must log in again) the job fails. Image jobs still retry by regenerating.
+
+### Fidelity and references (follow-up to cycle 1)
+- Merchant feedback: generated looks added a wrong bottom or changed the dress altogether. Causes: only 3 of the product's images reached the models, and clothing in style references leaked into the output. Changes:
+  - Snapshots keep up to 12 product images (PRODUCT_SNAPSHOT_MAX_IMAGES). The planner (a text model that reads many images) gets every product image up to ai.planner.maxProductImages (10); the image model gets the first ai.image.maxProductImages (4, plus at most ai.image.maxStyleReferences = 2 style images); Veo gets the first 3 (its hard limit for asset images). The featured image is always first.
+  - References now have two meanings. Uploads made for ONE product are extra photos or videos of that exact product (ground truth): own images join the product images right after the featured image, own videos go to the planner as PRODUCT VIDEO. Common references are style only (setting, light, mood, composition, motion), never the product or its clothing. The resolution table in section 9 still decides which products can run (a product still needs at least one own or common reference).
+  - Prompts: the planner must read all product images together, list every visible garment piece by piece in mustPreserve with exact colors and fabric words, never swap or add a piece, and use the exact words in each shot prompt. The image prompt and the Veo prompt both carry an outfit fidelity rule and the mustPreserve checklist. Style references are labeled "setting, light and mood only; do not copy any garment, product, accessory or person from it".
+  - Model input limits: gemini-2.5-flash-image documents 3 input images per prompt; the default of 4 product + 2 style images exceeds that and is unverified on Vertex. If the image model rejects it, lower ai.image.maxProductImages and maxStyleReferences in the config (hot reloaded).
+- Product list: products without an image are never listed (the server reads on to further Shopify pages, up to 4 requests, to fill a page). GET /products takes an optional status filter (active or draft) that Shopify applies, so tabs and pages agree. The API page limit stays 50.
+- API client errors: the web client has a request timeout, retries transport failures and 429/502/503/504 for GETs with backoff, and turns provider failures (quota, timeout, outage) into explanatory messages. Backend provider handling is unchanged (section 11.2).
+
+### Safety blocks and adding outputs to products
+- Safety blocks: ordinary fashion shots (a person wearing the garment) were sometimes blocked by the provider's filters. The planner prompt now plans only wholesome, family-friendly content: garments described by cut and fabric, no suggestive or body words, calm fully clothed adult models in catalog poses, no intimate settings, and no person at all for children's, swimwear, underwear or sleepwear products. The image and Veo templates say the same.
+- The first safety block of an image or video job is retried once (an attempt and the usual backoff are used) in a safer presentation: no person, the garment on a headless mannequin, hanger or flat lay; image retries drop the style references, video retries become a slow orbit with no subject action. A second block fails the job with safety_blocked as before. A video operation filtered at poll time is resubmitted once the same way. Job and plan prompts are recorded as sent.
+- POST /api/v1/batches/:id/attach-media adds the ready outputs of the batch (all items, or the given itemIds) to the Shopify products they were made for, with fileUpdate referencesToAdd on the files already stored in Shopify Files. It is idempotent: media_assets.attachedAt records what is on the product, and a repeat reports alreadyAttached. Per-product failures (Shopify userErrors, a file that is not ready, a denied scope) come back in the result rows; a shop that needs to log in again is 409 shop_reauth_required. It needs no scope beyond write_files according to the fileUpdate reference, but Shopify's migration guide lists write_products for this workflow: if a store answers with the "did not allow adding files to products" message, add write_products to the scopes in both shopify.app.toml files and SHOPIFY_SCOPES, deploy, and approve the new permission in the admin. Unverified against a live store.
 
 ### Mobile
 - The login footer links come from optional EXPO_PUBLIC_PRIVACY_URL, EXPO_PUBLIC_TERMS_URL and EXPO_PUBLIC_SUPPORT_URL. Log out has no confirmation.

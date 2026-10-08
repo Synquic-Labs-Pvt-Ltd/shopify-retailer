@@ -28,10 +28,10 @@ test('select products, add references, generate, follow the batch, retry and vie
   await expect(page.getByText('2 products need a reference.').first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: /^Generate 2 products/ })).toBeDisabled();
 
-  // 3. One product gets its own reference, the other needs the common one
-  await pickFile(page, 'Add references to Ceramic Table Lamp');
+  // 3. One product gets its own photos, the other needs the style references
+  await pickFile(page, 'Add product photos to Ceramic Table Lamp');
   await expect(page.getByText('1 product needs a reference.').first()).toBeVisible({ timeout: 20_000 });
-  await pickFile(page, 'Add files');
+  await pickFile(page, 'Add style references');
   await expect(page.getByText(/needs? a reference\./)).toHaveCount(0, { timeout: 30_000 });
   const generate = page.getByRole('button', { name: /^Generate 2 products/ });
   await expect(generate).toBeEnabled({ timeout: 30_000 });
@@ -42,6 +42,8 @@ test('select products, add references, generate, follow the batch, retry and vie
   await expect(page.getByText('2 products').first()).toBeVisible();
   const retry = page.getByRole('button', { name: 'Retry failed' });
   await expect(retry).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Download all (.zip)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to products', exact: true })).toBeVisible();
   await retry.click();
   await expect(page.getByText('Retrying the failed jobs')).toBeVisible();
 

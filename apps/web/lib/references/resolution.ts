@@ -13,14 +13,14 @@ export interface ProductResolution {
 }
 
 export function resolutionLabel(mode: ReferenceResolution, ownCount: number): string {
-  const own = `${ownCount} ${ownCount === 1 ? 'reference' : 'references'}`;
+  const own = `${ownCount} ${ownCount === 1 ? 'photo' : 'photos'}`;
   switch (mode) {
     case 'own_plus_common':
-      return `${own} + common`;
+      return `${own} + style`;
     case 'own_only':
       return own;
     case 'common_only':
-      return 'Uses common references';
+      return 'Style references only';
     case 'none':
       return 'Needs a reference';
   }
@@ -42,7 +42,7 @@ export function unresolvedProductIds(draft: ResolutionDraft): string[] {
 
 export function unresolvedMessage(count: number): string {
   const subject = count === 1 ? '1 product needs' : `${count} products need`;
-  return `${subject} a reference. Add references to each product or add a common reference.`;
+  return `${subject} a reference. Add photos to each product or add a style reference.`;
 }
 
 // The ids to show as unresolved: the ones this device computed plus the ones a 422 references_required named.

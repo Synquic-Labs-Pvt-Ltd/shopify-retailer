@@ -1,7 +1,7 @@
 import type { ClassifiedError, VideoSubmitRequest } from '../ai';
 import { renderVideoPrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
-import { failure, outcomeFromAiError } from './outcomes';
+import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
   beginJob,
   CANCELLED,
@@ -29,7 +29,7 @@ function isTransportError(error: ClassifiedError): boolean {
 }
 
 async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise<JobOutcome> {
-  const run = await beginJob(rt, job, { references: false });
+  const run = await beginJob(rt, job);
   if (run === null) return CANCELLED;
   const { ctx } = run;
   const outputIndex = job.outputIndex ?? 0;
@@ -39,11 +39,11 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   if (shot === undefined) {
     return { kind: 'failed', error: failure('internal', `The creative plan has no video shot ${outputIndex + 1}`, false) };
   }
-  const productSources = productImageSources(ctx.productSnapshot).slice(0, MAX_REFERENCE_IMAGES);
+  const productSources = productImageSources(ctx).slice(0, MAX_REFERENCE_IMAGES);
   if (productSources.length === 0) return NO_PRODUCT_IMAGES;
 
   const template = rt.getPrompt('video.user');
-  const prompt = renderVideoPrompt(template.text, shot);
+  const prompt = renderVideoPrompt(template.text, plan, shot, { safe: isSafeAttempt(job) });
   const audit = { promptVersion: template.version, renderedPrompt: prompt };
   const video = ctx.config.video;
 
@@ -68,7 +68,7 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       personGeneration: video.personGeneration,
       sampleCount: 1,
     });
-    if (!submitted.ok) return outcomeFromAiError(submitted.error, audit);
+    if (!submitted.ok) return outcomeFromGenerationError(submitted.error, job, audit);
     return awaiting(rt, submitted.value.operationName, audit);
   } catch (err) {
     const outcome = downloadFailed(err);
@@ -77,6 +77,8 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   }
 }
 
+// A filtered operation is resubmitted once in the safer presentation, so a poll after the second submit (attempt 2 or
+// later) is final.
 async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise<JobOutcome> {
   // A cancelled batch drops the operation without storing its result.
   const run = await beginJob(rt, job, { references: false });
@@ -93,7 +95,7 @@ async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promi
     signal,
     operationName,
   });
-  if (!polled.ok) return isTransportError(polled.error) ? awaiting(rt, operationName) : outcomeFromAiError(polled.error);
+  if (!polled.ok) return isTransportError(polled.error) ? awaiting(rt, operationName) : outcomeFromGenerationError(polled.error, job, undefined, job.attempts > 1);
   if (!polled.value.done) return awaiting(rt, operationName);
 
   // The operation finished, but the batch may have been cancelled meanwhile: do not store the result.

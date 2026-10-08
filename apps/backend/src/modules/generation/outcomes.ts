@@ -1,5 +1,5 @@
 import type { ClassifiedError } from '../ai';
-import type { JobAudit, JobError, JobOutcome } from '../queue';
+import type { JobAudit, JobError, JobOutcome, QueueJob } from '../queue';
 import type { LaneFailure } from '../ratelimit';
 
 export function toJobError(error: ClassifiedError): JobError {
@@ -36,6 +36,24 @@ export function outcomeFromAiError(error: ClassifiedError, audit?: JobAudit): Jo
     case 'safety_blocked':
       return { kind: 'failed', error: { ...jobError, retryable: false }, ...extras };
   }
+}
+
+// True when the job already ran once into a safety block, so this run uses the safer presentation (no person).
+export const isSafeAttempt = (job: QueueJob): boolean => job.error?.code === 'safety_blocked';
+
+// Image and video jobs: the first safety block is retried once with the safer presentation instead of failing the
+// product's output; a second block fails the job as before. The retry uses an attempt and the usual backoff.
+// alreadySafe says the run that was blocked already used the safer presentation. For a submit that is read from the job's
+// last error; a poll must pass its own answer, because a successful submit clears that error.
+export function outcomeFromGenerationError(
+  error: ClassifiedError,
+  job: QueueJob,
+  audit?: JobAudit,
+  alreadySafe: boolean = isSafeAttempt(job),
+): JobOutcome {
+  const outcome = outcomeFromAiError(error, audit);
+  if (error.kind !== 'safety_blocked' || outcome.kind !== 'failed' || alreadySafe) return outcome;
+  return { ...outcome, kind: 'retry', error: { ...outcome.error, retryable: true } };
 }
 
 // Errors that are the handler's own, not the provider's.

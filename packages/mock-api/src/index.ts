@@ -8,9 +8,10 @@ export { mockSession } from './fixtures';
 
 // In-memory fixtures for the mobile app (EXPO_PUBLIC_API_MOCK=true) and the web app (NEXT_PUBLIC_MOCK=1); the mock
 // never talks to the backend. The pieces:
-//   fixtures.ts    45 products (three pages), /me with the generation limits, the session
+//   fixtures.ts    45 products (42 with an image, mixed statuses), /me with the generation limits, the session
 //   mediaStore.ts  reference uploads: staged mock:// targets, processing polls, failure demos
 //   batchStore.ts  batches that advance with the clock, cancel and retry failed, admission limit
+// The product list leaves out products without an image, like the real backend, and filters by status.
 // Demo hooks: searching "error" fails the product list (error state), searching "zzz" finds nothing.
 
 const PAGE_DEFAULT = 25;
@@ -77,11 +78,16 @@ export function createMockApi(options: MockApiOptions = {}): Api {
         await wait(3);
         const query = params?.q?.trim().toLowerCase() ?? '';
         if (query === 'error') throw new ApiError(500, 'internal', 'Mock products failure');
-        const matches = PRODUCTS.map((product, index) => ({ product, index })).filter(({ product }) =>
-          product.title.toLowerCase().includes(query),
+        const status = params?.status?.toUpperCase();
+        // Page cursors are offsets into the filtered list, so a cursor only fits the same q and status.
+        const matches = PRODUCTS.map((product, index) => toListItem(product, index)).filter(
+          (item) =>
+            item.imageUrl !== null &&
+            item.title.toLowerCase().includes(query) &&
+            (status === undefined || item.status === status),
         );
         const { page, pageInfo } = offsetPage(matches, params?.cursor, params?.limit);
-        return { items: page.map(({ product, index }) => toListItem(product, index)), pageInfo };
+        return { items: page, pageInfo };
       },
       get: async (gid) => {
         await wait();
@@ -129,6 +135,10 @@ export function createMockApi(options: MockApiOptions = {}): Api {
       retryFailed: async (id) => {
         await wait();
         return batches().retryFailed(id);
+      },
+      attachMedia: async (id, body) => {
+        await wait(2);
+        return batches().attachMedia(id, body);
       },
     },
   };

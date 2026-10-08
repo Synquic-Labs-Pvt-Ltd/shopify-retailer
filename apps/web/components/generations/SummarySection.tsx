@@ -1,9 +1,15 @@
 import type { ReactNode } from 'react';
 import type { BatchDetail } from '@rs/shared';
 import { batchProgress, batchTone } from '@/lib/batch/status';
-import { downloadAllLabel, outputsReady, outputsTotal, percentText, savingLabel } from './logic';
+import {
+  DOWNLOAD_ALL_LABEL,
+  archiveProgressLabel,
+  outputsReady,
+  outputsTotal,
+  percentText,
+  type ArchiveProgress,
+} from './logic';
 import { BatchStatusBadge } from './StatusBadge';
-import type { BulkProgress } from './useDownloads';
 
 function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -16,17 +22,17 @@ function SummaryRow({ label, children }: { label: string; children: ReactNode })
 
 interface SummarySectionProps {
   batch: BatchDetail;
-  // Number of outputs "Download all" would save.
+  // Number of outputs "Download all" would put in the zip.
   downloadCount: number;
-  // Any save is running (single or bulk): the button waits.
+  // Any save is running (single or zip): the button waits.
   saving: boolean;
-  // Set while "Download all" runs.
-  bulk: BulkProgress | null;
+  // Set while the zip of the whole batch is being built.
+  archive: ArchiveProgress | null;
   onDownloadAll: () => void;
 }
 
-// The aside of the detail page: status, counts, progress and "Download all".
-export function SummarySection({ batch, downloadCount, saving, bulk, onDownloadAll }: SummarySectionProps) {
+// The aside of the detail page: status, counts, progress and "Download all (.zip)".
+export function SummarySection({ batch, downloadCount, saving, archive, onDownloadAll }: SummarySectionProps) {
   const progress = batchProgress(batch.counts);
   return (
     <s-section slot="aside" heading="Summary">
@@ -46,9 +52,21 @@ export function SummarySection({ batch, downloadCount, saving, bulk, onDownloadA
           accessibilityLabel={`${percentText(progress)} of the jobs finished`}
         />
         <s-divider />
-        <s-button inlineSize="fill" icon="download" disabled={downloadCount === 0 || saving} onClick={onDownloadAll}>
-          {bulk === null ? downloadAllLabel(downloadCount) : savingLabel(bulk.done, bulk.total)}
+        <s-button
+          inlineSize="fill"
+          icon="download"
+          loading={archive !== null}
+          disabled={downloadCount === 0 || saving}
+          onClick={onDownloadAll}
+        >
+          {archive === null ? DOWNLOAD_ALL_LABEL : archiveProgressLabel(archive.done, archive.total)}
         </s-button>
+        {archive === null ? null : (
+          <s-progress
+            value={archive.total === 0 ? 0 : archive.done / archive.total}
+            accessibilityLabel={archiveProgressLabel(archive.done, archive.total)}
+          />
+        )}
       </s-stack>
     </s-section>
   );

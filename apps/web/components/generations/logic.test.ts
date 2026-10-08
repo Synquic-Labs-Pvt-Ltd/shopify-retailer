@@ -2,14 +2,16 @@ import { ApiError, BATCH_STATUSES } from '@rs/shared';
 import type { BatchCounts, BatchItemView, BatchJobView, BatchStatus, MediaObject } from '@rs/shared';
 import { describe, expect, it } from 'vitest';
 import { resultTiles, usableOutputs } from '@/lib/batch/outputs';
+import type { ZipDownloadResult } from '@/lib/download';
 import {
   BATCH_TABS,
   arrowKeyDelta,
   canCancelBatch,
   canRetryFailed,
-  downloadItemsOf,
-  downloadItemsOfBatch,
-  downloadSummaryToast,
+  archiveGroupOf,
+  archiveProgressLabel,
+  archiveToast,
+  batchArchiveFiles,
   failedTileTitle,
   filterByTab,
   isBatchNotFound,
@@ -22,12 +24,13 @@ import {
   outputsTotal,
   pendingTileLabel,
   percentText,
+  productArchiveFiles,
   readyText,
-  savingLabel,
   singleDownloadToast,
   viewerCounter,
   viewerIndex,
   viewerTargetOf,
+  zipProgressOf,
 } from './logic';
 
 const gid = 'gid://shopify/Product/1';
@@ -237,25 +240,104 @@ describe('outputFilename', () => {
   });
 });
 
-describe('download items', () => {
-  it('numbers outputs per product, images first', () => {
-    const video = media(1, { mediaType: 'video', url: 'https://cdn.shopify.com/v/a.mp4', filename: 'a.mp4' });
-    const image = media(2, { shotTitle: 'Detail' });
+describe('zip contents', () => {
+  const video = media(1, { mediaType: 'video', url: 'https://cdn.shopify.com/v/a.mp4', filename: 'a.mp4' });
+  const image = media(2, { shotTitle: 'Detail' });
+
+  it('names the outputs of a product like the single downloads, images first', () => {
     const product = item('Mug', [video, image]);
-    expect(downloadItemsOf(product)).toEqual([
-      { url: image.url, filename: 'Mug-Detail-1.jpg' },
-      { url: video.url, filename: 'Mug-video-2.mp4' },
+    expect(archiveGroupOf(product)).toEqual({
+      title: 'Mug',
+      files: [
+        { url: image.url, filename: 'Mug-Detail-1.jpg' },
+        { url: video.url, filename: 'Mug-video-2.mp4' },
+      ],
+    });
+  });
+
+  it('puts every product of a batch in a folder named after it', () => {
+    const first = item('Linen shirt', [media(1), media(2, { status: 'processing' })]);
+    const second = { ...item('Tote bag', [media(3)]), id: 'e'.repeat(24) };
+    expect(batchArchiveFiles({ items: [first, second] })).toEqual([
+      { url: media(1).url, path: 'Linen-shirt/Linen-shirt-image-1.jpg' },
+      { url: media(3).url, path: 'Tote-bag/Tote-bag-image-1.jpg' },
     ]);
   });
 
-  it('skips outputs that are not ready and joins the products of a batch', () => {
-    const first = item('One', [media(1), media(2, { status: 'processing' })]);
-    const second = { ...item('Two', [media(3)]), id: 'e'.repeat(24) };
-    expect(downloadItemsOfBatch({ items: [first, second] }).map((entry) => entry.filename)).toEqual([
-      'One-image-1.jpg',
-      'Two-image-1.jpg',
+  it('keeps products with the same title apart and leaves out products without outputs', () => {
+    const one = item('Mug', [media(1)]);
+    const two = { ...item('Mug', [media(2)]), id: 'e'.repeat(24) };
+    const none = { ...item('Empty', []), id: 'd'.repeat(24) };
+    expect(batchArchiveFiles({ items: [one, none, two] }).map((file) => file.path)).toEqual([
+      'Mug/Mug-image-1.jpg',
+      'Mug-2/Mug-image-1.jpg',
     ]);
-    expect(downloadItemsOfBatch({ items: [] })).toEqual([]);
+    expect(batchArchiveFiles({ items: [] })).toEqual([]);
+  });
+
+  it('zips one product with its own folder and skips outputs that are not ready', () => {
+    const product = item('Mug', [media(1), media(2, { status: 'processing' }), media(3, { url: null })]);
+    expect(productArchiveFiles(product)).toEqual([{ url: media(1).url, path: 'Mug/Mug-image-1.jpg' }]);
+    expect(productArchiveFiles(item('Mug', []))).toEqual([]);
+  });
+});
+
+describe('zip progress and toasts', () => {
+  const zip = (overrides: Partial<ZipDownloadResult>): ZipDownloadResult => ({
+    outcome: 'saved',
+    total: 9,
+    added: 9,
+    skipped: [],
+    ...overrides,
+  });
+
+  it('labels the file being fetched, never past the last one', () => {
+    expect(archiveProgressLabel(0, 9)).toBe('Preparing 1 of 9 files...');
+    expect(archiveProgressLabel(3, 9)).toBe('Preparing 4 of 9 files...');
+    expect(archiveProgressLabel(9, 9)).toBe('Preparing 9 of 9 files...');
+  });
+
+  it('shows the progress only on the button of the zip that is being built', () => {
+    const archive = { scope: 'item-1', done: 1, total: 4 };
+    expect(zipProgressOf(archive, 'item-1')).toBe('Preparing 2 of 4 files...');
+    expect(zipProgressOf(archive, 'item-2')).toBeNull();
+    expect(zipProgressOf(archive, 'batch')).toBeNull();
+    expect(zipProgressOf(null, 'item-1')).toBeNull();
+  });
+
+  it('confirms a complete zip by name', () => {
+    expect(archiveToast(zip({}), 'retailer-studio-a1b2c3.zip')).toEqual({
+      message: 'Saved retailer-studio-a1b2c3.zip with 9 files',
+      isError: false,
+    });
+    expect(archiveToast(zip({ added: 1, total: 1 }), 'Mug.zip')?.message).toBe('Saved Mug.zip with 1 file');
+  });
+
+  it('names the files that were left out of a partly filled zip', () => {
+    expect(archiveToast(zip({ added: 7, skipped: ['Mug/a.jpg', 'Mug/b.mp4'] }), 'Mug.zip')).toEqual({
+      message: 'Saved 7 of 9 files in Mug.zip. Could not download a.jpg, b.mp4.',
+      isError: true,
+    });
+    const many = ['x/1.jpg', 'x/2.jpg', 'x/3.jpg', 'x/4.jpg', 'x/5.jpg'];
+    expect(archiveToast(zip({ added: 4, skipped: many }), 'x.zip')?.message).toBe(
+      'Saved 4 of 9 files in x.zip. Could not download 1.jpg, 2.jpg, 3.jpg and 2 more.',
+    );
+  });
+
+  it('is an error when nothing could be fetched, the zip is too large, and silent when cancelled', () => {
+    expect(archiveToast(zip({ outcome: 'failed', added: 0, skipped: ['a/1.jpg'] }), 'x.zip')).toEqual({
+      message: 'Could not download the files. Try again.',
+      isError: true,
+    });
+    expect(archiveToast(zip({ outcome: 'too_large' }), 'x.zip')?.isError).toBe(true);
+    expect(archiveToast(zip({ outcome: 'cancelled' }), 'x.zip')).toBeNull();
+  });
+
+  it('says where the zip went when the browser refused to save it', () => {
+    expect(archiveToast(zip({ outcome: 'opened' }), 'x.zip')).toEqual({
+      message: 'Could not save the zip, it was opened in a new tab',
+      isError: false,
+    });
   });
 });
 
@@ -267,19 +349,6 @@ describe('download toasts', () => {
       isError: false,
     });
     expect(singleDownloadToast('failed').isError).toBe(true);
-  });
-
-  it('summarises a bulk save', () => {
-    expect(downloadSummaryToast({ saved: 6, failed: 0 })).toEqual({ message: 'Saved 6 files', isError: false });
-    expect(downloadSummaryToast({ saved: 1, failed: 0 }).message).toBe('Saved 1 file');
-    expect(downloadSummaryToast({ saved: 4, failed: 2 })).toEqual({ message: 'Saved 4, 2 failed', isError: true });
-    expect(downloadSummaryToast({ saved: 0, failed: 3 }).isError).toBe(true);
-  });
-
-  it('labels the running bulk save from the files done so far', () => {
-    expect(savingLabel(0, 6)).toBe('Saving 1 of 6');
-    expect(savingLabel(2, 6)).toBe('Saving 3 of 6');
-    expect(savingLabel(6, 6)).toBe('Saving 6 of 6');
   });
 });
 

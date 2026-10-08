@@ -42,7 +42,8 @@ export function SummaryAside({ productCount, imagesPerProduct, videosPerProduct,
       <s-section slot="aside" heading="References">
         <s-stack gap="small">
           <s-paragraph color="subdued">
-            A product uses its own references plus the common ones. With neither, it cannot be generated.
+            A product always follows its Shopify photos and the photos you add for it. Style references only set the look.
+            With neither added, a product cannot be generated.
           </s-paragraph>
           <Line label="Ready">{readyProductsLabel(readyProducts, productCount)}</Line>
           {hint !== null ? <s-text tone="warning">{hint}</s-text> : null}

@@ -1,18 +1,23 @@
-import { useCallback, useRef, useState } from 'react';
-import { downloadAll, downloadFile, type DownloadItem } from '@/lib/download';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ArchiveFile } from '@/lib/archive';
+import { downloadFile, downloadZip, type DownloadItem } from '@/lib/download';
 import { showToast } from '@/lib/shopify';
-import { downloadSummaryToast, singleDownloadToast } from './logic';
+import { archiveToast, singleDownloadToast, type ArchiveProgress } from './logic';
 
-export interface BulkProgress {
-  done: number;
-  total: number;
-}
-
-// Single and bulk saves, one at a time, each ending in a toast. Both helpers in lib/download never throw.
+// Single saves and zips, one at a time, each ending in a toast. Both helpers in lib/download never throw. A zip in
+// progress is abandoned when the page is left.
 export function useDownloads() {
-  const [bulk, setBulk] = useState<BulkProgress | null>(null);
+  const [archive, setArchive] = useState<ArchiveProgress | null>(null);
   const [savingOne, setSavingOne] = useState(false);
   const busy = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+    },
+    [],
+  );
 
   const saveOne = useCallback(async (item: DownloadItem): Promise<void> => {
     if (busy.current) return;
@@ -27,18 +32,25 @@ export function useDownloads() {
     }
   }, []);
 
-  const saveAll = useCallback(async (items: readonly DownloadItem[]): Promise<void> => {
-    if (busy.current || items.length === 0) return;
+  const saveArchive = useCallback(async (scope: string, files: readonly ArchiveFile[], name: string): Promise<void> => {
+    if (busy.current || files.length === 0) return;
     busy.current = true;
+    const abort = new AbortController();
+    controller.current = abort;
+    setArchive({ scope, done: 0, total: files.length });
     try {
-      const summary = await downloadAll(items, (done, total) => setBulk({ done, total }));
-      const { message, isError } = downloadSummaryToast(summary);
-      showToast(message, isError);
+      const result = await downloadZip(files, name, {
+        signal: abort.signal,
+        onProgress: (done, total) => setArchive({ scope, done, total }),
+      });
+      const toast = archiveToast(result, name);
+      if (toast !== null) showToast(toast.message, toast.isError);
     } finally {
       busy.current = false;
-      setBulk(null);
+      controller.current = null;
+      setArchive(null);
     }
   }, []);
 
-  return { bulk, savingOne, saving: bulk !== null || savingOne, saveOne, saveAll };
+  return { archive, savingOne, saving: archive !== null || savingOne, saveOne, saveArchive };
 }

@@ -2,6 +2,7 @@ import {
   ApiError,
   ERROR_CODES,
   ERROR_HTTP_STATUS,
+  attachMediaRequestSchema,
   batchListQuerySchema,
   createBatchRequestSchema,
   idParamsSchema,
@@ -139,6 +140,12 @@ export const MOCK_ROUTES: readonly Route[] = [
     method: 'POST',
     pattern: 'batches/:id/retry-failed',
     handle: async ({ api, params }) => ok(await api.batches.retryFailed(parse(idParamsSchema, params).id)),
+  },
+  {
+    method: 'POST',
+    pattern: 'batches/:id/attach-media',
+    handle: async ({ api, params, body }) =>
+      ok(await api.batches.attachMedia(parse(idParamsSchema, params).id, parse(attachMediaRequestSchema, body ?? {}))),
   },
 ];
 

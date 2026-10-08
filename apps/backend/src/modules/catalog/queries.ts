@@ -1,3 +1,5 @@
+import { PRODUCT_SNAPSHOT_MAX_IMAGES } from '@rs/shared';
+
 // Admin GraphQL documents (SPEC 8.5). Product.images and Product.featuredImage are deprecated, so
 // images come from media filtered to IMAGE (the media_type filter exists since API 2024-04).
 const SNAPSHOT_FIELDS = /* GraphQL */ `
@@ -20,7 +22,7 @@ const SNAPSHOT_FIELDS = /* GraphQL */ `
         }
       }
     }
-    media(first: 5, query: "media_type:IMAGE") {
+    media(first: ${PRODUCT_SNAPSHOT_MAX_IMAGES}, query: "media_type:IMAGE") {
       nodes {
         ... on MediaImage {
           image {

@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod';
 import {
+  attachMediaResponseSchema,
   authSessionResponseSchema,
   batchDetailSchema,
   batchListResponseSchema,
@@ -156,6 +157,8 @@ export function createHttpApi(): Api {
       cancel: (id) => request(batchSummarySchema, { method: 'POST', path: `/api/v1/batches/${id}/cancel` }),
       retryFailed: (id) =>
         request(batchSummarySchema, { method: 'POST', path: `/api/v1/batches/${id}/retry-failed` }),
+      attachMedia: (id, body) =>
+        request(attachMediaResponseSchema, { method: 'POST', path: `/api/v1/batches/${id}/attach-media`, body: body ?? {} }),
     },
   };
 }

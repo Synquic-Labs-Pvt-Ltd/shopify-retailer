@@ -1,11 +1,12 @@
 import type { BatchListResponse, BatchStatus, BatchSummary } from '@rs/shared';
-import { BATCH_STATUSES } from '@rs/shared';
+import { ApiError, BATCH_STATUSES } from '@rs/shared';
 import { describe, expect, it } from 'vitest';
 import {
   BATCH_DETAIL_POLL_MS,
   BATCH_LIST_POLL_MS,
   batchDetailPollInterval,
   batchListPollInterval,
+  pollNotice,
 } from './batches';
 import { mediaPollDelay } from './media';
 
@@ -20,6 +21,16 @@ function summary(status: BatchStatus): BatchSummary {
     configSnapshot: { outputs: { imagesPerProduct: 2, videosPerProduct: 1 } },
   };
 }
+
+const NETWORK = new ApiError(0, 'network_error', 'Cannot reach the server');
+const TIMEOUT = new ApiError(0, 'timeout', 'Too slow');
+const UNAVAILABLE = new ApiError(503, 'service_unavailable', 'Down');
+const RATE_LIMITED = new ApiError(429, 'too_many_requests', 'Slow down');
+const TRANSIENT = [NETWORK, TIMEOUT, UNAVAILABLE, RATE_LIMITED];
+const UNAUTHORIZED = new ApiError(401, 'unauthorized', 'Reopen the app');
+const NOT_FOUND = new ApiError(404, 'not_found', 'Gone');
+const INTERNAL = new ApiError(500, 'internal', 'Boom');
+const PERMANENT = [UNAUTHORIZED, NOT_FOUND, INTERNAL];
 
 function page(...statuses: BatchStatus[]): BatchListResponse {
   return { items: statuses.map(summary), pageInfo: { endCursor: null, hasNextPage: false } };
@@ -47,26 +58,72 @@ describe('batchListPollInterval', () => {
   it('stops while the document is hidden', () => {
     expect(batchListPollInterval([page('running')], false)).toBe(false);
   });
+
+  it('keeps polling after a failed poll that may pass, and stops for one that will not', () => {
+    for (const error of TRANSIENT) expect(batchListPollInterval([page('running')], true, error)).toBe(8000);
+    for (const error of PERMANENT) expect(batchListPollInterval([page('running')], true, error)).toBe(false);
+    expect(batchListPollInterval([page('running')], true, null)).toBe(8000);
+    expect(batchListPollInterval([page('running')], true, undefined)).toBe(8000);
+  });
 });
 
 describe('batchDetailPollInterval', () => {
   it('polls every 4 s until the batch is terminal', () => {
     for (const status of BATCH_STATUSES) {
       const terminal = ['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(status);
-      expect(batchDetailPollInterval({ status, hasError: false }, true)).toBe(terminal ? false : BATCH_DETAIL_POLL_MS);
+      expect(batchDetailPollInterval({ status, error: null }, true)).toBe(terminal ? false : BATCH_DETAIL_POLL_MS);
     }
   });
 
-  it('keeps polling after a failed refresh when data is already loaded', () => {
-    expect(batchDetailPollInterval({ status: 'running', hasError: true }, true)).toBe(4000);
+  it('keeps polling after a failed refresh that may pass (network, timeout, outage) while data is loaded', () => {
+    for (const error of TRANSIENT) {
+      expect(batchDetailPollInterval({ status: 'running', error }, true)).toBe(4000);
+    }
+  });
+
+  it('stops polling after a failure that will not pass, such as a 401', () => {
+    for (const error of PERMANENT) {
+      expect(batchDetailPollInterval({ status: 'running', error }, true)).toBe(false);
+    }
   });
 
   it('polls before the first response but stops if that load failed', () => {
-    expect(batchDetailPollInterval({ status: undefined, hasError: false }, true)).toBe(4000);
-    expect(batchDetailPollInterval({ status: undefined, hasError: true }, true)).toBe(false);
+    expect(batchDetailPollInterval({ status: undefined }, true)).toBe(4000);
+    expect(batchDetailPollInterval({ status: undefined, error: null }, true)).toBe(4000);
+    expect(batchDetailPollInterval({ status: undefined, error: NETWORK }, true)).toBe(false);
+    expect(batchDetailPollInterval({ status: undefined, error: UNAUTHORIZED }, true)).toBe(false);
   });
 
   it('stops while the document is hidden', () => {
-    expect(batchDetailPollInterval({ status: 'running', hasError: false }, false)).toBe(false);
+    expect(batchDetailPollInterval({ status: 'running' }, false)).toBe(false);
+  });
+
+  it('does not poll a finished batch, whatever the last request did', () => {
+    expect(batchDetailPollInterval({ status: 'completed', error: NETWORK }, true)).toBe(false);
+  });
+});
+
+describe('pollNotice', () => {
+  it('is none while the poll works or nothing is loaded yet', () => {
+    expect(pollNotice({ hasData: true, error: null })).toBe('none');
+    expect(pollNotice({ hasData: true, error: undefined, failureReason: null })).toBe('none');
+    expect(pollNotice({ hasData: false, error: NETWORK })).toBe('none');
+    expect(pollNotice({ hasData: false, error: null, failureReason: NETWORK })).toBe('none');
+  });
+
+  it('says reconnecting while data is on screen and the failure may pass', () => {
+    for (const error of TRANSIENT) expect(pollNotice({ hasData: true, error })).toBe('reconnecting');
+  });
+
+  it('says reconnecting while a failed attempt is being retried', () => {
+    expect(pollNotice({ hasData: true, error: null, failureReason: UNAVAILABLE })).toBe('reconnecting');
+  });
+
+  it('says stopped for a failure that will not pass', () => {
+    for (const error of PERMANENT) expect(pollNotice({ hasData: true, error })).toBe('stopped');
+  });
+
+  it('prefers the error of the last request over the attempt being retried', () => {
+    expect(pollNotice({ hasData: true, error: UNAUTHORIZED, failureReason: NETWORK })).toBe('stopped');
   });
 });

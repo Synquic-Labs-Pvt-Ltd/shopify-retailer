@@ -1,4 +1,11 @@
-import type { AuthSessionResponse, MeResponse, ProductDetail, ProductListItem, ProductOption } from '@rs/shared';
+import type {
+  AuthSessionResponse,
+  MeResponse,
+  ProductDetail,
+  ProductListItem,
+  ProductOption,
+  ProductStatus,
+} from '@rs/shared';
 import { IMAGES_PER_PRODUCT, VIDEOS_PER_PRODUCT, objectId, picture, productGid, slugify } from './util';
 
 interface ProductSeed {
@@ -105,7 +112,7 @@ const OBJECTS: { name: string; type: string; vendor: string }[] = [
   { name: 'Serving Tray', type: 'Kitchen', vendor: 'Marlow' },
 ];
 
-// 9 handwritten products and 36 generated ones: three pages at the app's page size of 20.
+// 9 handwritten products and 36 generated ones.
 const GENERATED: ProductSeed[] = MATERIALS.flatMap((material, m) =>
   OBJECTS.map((object, o) => ({
     title: `${material} ${object.name}`,
@@ -120,12 +127,21 @@ const GENERATED: ProductSeed[] = MATERIALS.flatMap((material, m) =>
 
 const SEEDS: ProductSeed[] = [...HANDWRITTEN, ...GENERATED];
 
-// The product at this index has no image, to show the placeholder thumbnail.
-const NO_IMAGE_INDEX = 12;
+// The products at these indexes have no image (an active one, a draft and another active one). GET /products leaves
+// them out like the real backend does; GET /products/:gid still serves them.
+const NO_IMAGE_INDEXES: ReadonlySet<number> = new Set([12, 25, 38]);
+
+const ARCHIVED_INDEX = 30;
+
+// From the tenth product on, every fourth is a draft; one is archived and the rest are active.
+function statusOf(index: number): ProductStatus {
+  if (index === ARCHIVED_INDEX) return 'ARCHIVED';
+  return index >= 9 && index % 4 === 1 ? 'DRAFT' : 'ACTIVE';
+}
 
 export const PRODUCTS: ProductDetail[] = SEEDS.map((seed, index) => {
   const handle = slugify(seed.title);
-  const imageUrls = index === NO_IMAGE_INDEX ? [] : [1, 2, 3].map((n) => picture(`${handle}-${n}`, 1536, 2048));
+  const imageUrls = NO_IMAGE_INDEXES.has(index) ? [] : [1, 2, 3].map((n) => picture(`${handle}-${n}`, 1536, 2048));
   return {
     id: productGid(index),
     title: seed.title,
@@ -146,11 +162,11 @@ export function toListItem(product: ProductDetail, index: number): ProductListIt
     id: product.id,
     title: product.title,
     handle: product.handle,
-    status: 'ACTIVE',
+    status: statusOf(index),
     vendor: product.vendor,
     productType: product.productType,
     imageUrl: product.featuredImageUrl === null ? null : picture(`${product.handle}-thumb`, 300, 400),
-    mediaCount: seed?.mediaCount ?? 1,
+    mediaCount: product.imageUrls.length === 0 ? 0 : (seed?.mediaCount ?? 1),
     variantsCount: seed?.variantsCount ?? 1,
   };
 }

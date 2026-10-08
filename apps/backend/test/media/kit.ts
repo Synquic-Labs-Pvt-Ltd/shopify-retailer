@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { pino } from 'pino';
 import { defaultGenerationConfig, type GenerationConfig, type MediaType, type UploadFileRequest } from '@rs/shared';
+import { AppError } from '../../src/core/errors';
 import type { ShopifyAdminClient } from '../../src/modules/shopify';
 import { createMediaModule, type MediaModule, type MediaModuleOptions } from '../../src/modules/media';
 
@@ -32,7 +33,7 @@ export function createClock(start = '2026-10-07T12:00:00.000Z'): TestClock {
 
 export interface RecordedCall {
   shopId: string;
-  operation: 'StagedUploadsCreate' | 'FileCreate' | 'FileStatus' | 'FileDelete';
+  operation: 'StagedUploadsCreate' | 'FileCreate' | 'FileStatus' | 'FileDelete' | 'FileUpdate';
   variables: Record<string, unknown>;
 }
 
@@ -60,6 +61,13 @@ export class FakeShopify {
   readonly calls: RecordedCall[] = [];
   readonly files = new Map<string, FakeFile>();
   readonly deleted: string[] = [];
+  // File gid -> the product gids it was added to (fileUpdate referencesToAdd).
+  readonly references = new Map<string, Set<string>>();
+  fileUpdateUserErrors: UserError[] = [];
+  // Shopify refuses the mutation for lack of an access scope.
+  denyFileUpdate = false;
+  // Makes fileUpdate throw this (a shop-level failure such as a login that is needed).
+  failFileUpdateWith: Error | null = null;
   stagedUserErrors: UserError[] = [];
   fileCreateUserErrors: UserError[] = [];
   fileDeleteUserErrors: UserError[] = [];
@@ -124,6 +132,7 @@ export class FakeShopify {
     if (query.includes('mutation FileCreate')) return this.record(shopId, 'FileCreate', variables, () => this.fileCreate(variables));
     if (query.includes('query FileStatus')) return this.record(shopId, 'FileStatus', variables, () => this.fileStatus(variables));
     if (query.includes('mutation FileDelete')) return this.record(shopId, 'FileDelete', variables, () => this.fileDelete(variables));
+    if (query.includes('mutation FileUpdate')) return this.record(shopId, 'FileUpdate', variables, () => this.fileUpdate(variables));
     throw new Error(`unexpected query: ${query}`);
   }
 
@@ -194,6 +203,19 @@ export class FakeShopify {
       sources: ready ? this.videoSources : [],
       originalSource: ready ? { url: 'https://cdn.shopify.com/original.mov', mimeType: 'video/quicktime', width: 1080, height: 1920 } : null,
     };
+  }
+
+  private fileUpdate(variables: Record<string, unknown>): unknown {
+    if (this.failFileUpdateWith !== null) throw this.failFileUpdateWith;
+    if (this.denyFileUpdate) throw AppError.forbidden('Shopify denied access to the requested data');
+    if (this.fileUpdateUserErrors.length > 0) return { fileUpdate: { files: null, userErrors: this.fileUpdateUserErrors } };
+    const inputs = variables.files as { id: string; referencesToAdd: string[] }[];
+    for (const input of inputs) {
+      const products = this.references.get(input.id) ?? new Set<string>();
+      for (const product of input.referencesToAdd) products.add(product);
+      this.references.set(input.id, products);
+    }
+    return { fileUpdate: { files: inputs.map((input) => ({ id: input.id })), userErrors: [] } };
   }
 
   private fileDelete(variables: Record<string, unknown>): unknown {

@@ -1,6 +1,6 @@
 import { buildImageParts, renderImagePrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
-import { failure, outcomeFromAiError } from './outcomes';
+import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
   beginJob,
   CANCELLED,
@@ -11,6 +11,7 @@ import {
   persistOutput,
   productImageSources,
   referenceSources,
+  splitReferences,
   type Runtime,
 } from './runtime';
 
@@ -26,18 +27,20 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   if (shot === undefined) {
     return { kind: 'failed', error: failure('internal', `The creative plan has no image shot ${outputIndex + 1}`, false) };
   }
-  const productSources = productImageSources(ctx.productSnapshot).slice(0, config.ai.image.maxProductImages);
+  const productSources = productImageSources(ctx).slice(0, config.ai.image.maxProductImages);
   if (productSources.length === 0) return NO_PRODUCT_IMAGES;
 
+  const safe = isSafeAttempt(job);
   const template = rt.getPrompt('image.user');
-  const prompt = renderImagePrompt(template.text, plan, shot, config);
+  const prompt = renderImagePrompt(template.text, plan, shot, config, { safe });
   const audit = { promptVersion: template.version, renderedPrompt: prompt };
 
   try {
-    // Own references come first in ctx.references, so the cap keeps them.
+    // Common references are style only; the product's own uploads are already part of productSources.
     const [productImages, styleReferences] = await Promise.all([
       loadImages(rt, productSources, signal),
-      loadImages(rt, referenceSources(ctx.references, 'image').slice(0, config.ai.image.maxStyleReferences), signal),
+      // The safer retry leaves the style references out: they may show the people the filter objected to.
+      safe ? Promise.resolve([]) : loadImages(rt, referenceSources(splitReferences(ctx).style, 'image').slice(0, config.ai.image.maxStyleReferences), signal),
     ]);
     const generated = await rt.ai.getProvider(ctx.config.provider).generateImage({
       model: ctx.config.models.image,
@@ -48,7 +51,7 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       imageSize: ctx.config.image.imageSize,
       outputMimeType: ctx.config.image.outputMimeType,
     });
-    if (!generated.ok) return outcomeFromAiError(generated.error, audit);
+    if (!generated.ok) return outcomeFromGenerationError(generated.error, job, audit);
 
     const stored = await persistOutput(rt, {
       job,

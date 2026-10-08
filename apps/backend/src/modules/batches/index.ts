@@ -1,5 +1,6 @@
 import type { RequestHandler, Router } from 'express';
 import type {
+  AttachMediaResponse,
   BatchConfigSnapshot,
   BatchDetail,
   BatchListQuery,
@@ -34,6 +35,9 @@ export interface BatchItemContext {
   productGid: string;
   productSnapshot: ProductSnapshot;
   effectiveReferenceMediaIds: string[];
+  // The subset of the effective references uploaded for this product alone. They are extra photos or videos of
+  // the exact product (ground truth); the other effective references are common style references.
+  ownReferenceMediaIds: string[];
   // The effective references that are still ready and usable, own references first.
   references: MediaAssetRecord[];
   referenceMode: ReferenceMode;
@@ -56,6 +60,9 @@ export interface BatchesService {
   createBatch(actor: BatchActor, input: CreateBatchInput): Promise<BatchSummary>;
   listBatches(shopId: string, query: BatchListQuery): Promise<BatchListResponse>;
   getBatch(shopId: string, batchId: string): Promise<BatchDetail>;
+  // Adds the ready outputs of the batch (of the given items, else of every item) to the Shopify products they were made
+  // for. Idempotent: outputs that are already on their product are reported, not added twice.
+  attachMedia(shopId: string, batchId: string, itemIds?: string[]): Promise<AttachMediaResponse>;
   // Queued, blocked and awaiting_operation jobs are cancelled; running jobs finish and keep their output.
   cancel(actor: BatchActor, batchId: string): Promise<BatchSummary>;
   // Requeues the failed jobs of a finished batch.
@@ -84,7 +91,7 @@ export interface BatchesModuleDeps {
   queue: Pick<QueueService, 'store'>;
   governor: Pick<Governor, 'listPaused'>;
   catalog: Pick<CatalogService, 'snapshotProducts'>;
-  media: Pick<MediaService, 'getAssets' | 'getObjects'>;
+  media: Pick<MediaService, 'getAssets' | 'getObjects' | 'attachToProducts'>;
   shops: Pick<ShopsService, 'requireActive'>;
   // Verifies the bearer token and sets req.auth (auth module's AuthService.requireAuth).
   requireAuth: RequestHandler;
@@ -95,7 +102,7 @@ export interface BatchesModuleDeps {
 export interface BatchesModule {
   service: BatchesService;
   // Mount at /api/v1: POST /batches, GET /batches, GET /batches/:id, POST /batches/:id/cancel and
-  // /batches/:id/retry-failed.
+  // /batches/:id/retry-failed and /batches/:id/attach-media.
   router: Router;
   // Creates the batches and batch_items indexes. Mongoose also does this on connect.
   ensureIndexes(): Promise<void>;

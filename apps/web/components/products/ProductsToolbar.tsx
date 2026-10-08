@@ -12,7 +12,7 @@ interface ProductsToolbarProps {
   onSearchChange: (search: string) => void;
 }
 
-// Status tabs on the left, title search on the right. The tabs filter the loaded products only.
+// Status tabs on the left, title search on the right. Both are filters of the products API, so they apply to every page.
 export function ProductsToolbar({ tab, onTabChange, search, onSearchChange }: ProductsToolbarProps) {
   const searchRef = useRef<HTMLElementTagNameMap['s-search-field']>(null);
   const update = (element: HTMLElementTagNameMap['s-search-field']): void => onSearchChange(element.value);

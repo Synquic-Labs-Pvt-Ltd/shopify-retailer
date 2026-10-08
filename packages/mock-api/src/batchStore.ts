@@ -1,5 +1,8 @@
 import {
   ApiError,
+  type AttachMediaItemResult,
+  type AttachMediaRequest,
+  type AttachMediaResponse,
   type BatchDelay,
   type BatchDetail,
   type BatchItemView,
@@ -52,6 +55,8 @@ interface SimBatch {
   cancelledAtMs: number | null;
   retriedAtMs: number | null;
   items: SimItem[];
+  // Output media id -> when attachMedia put it on its product.
+  attachedAt: Map<string, string>;
 }
 
 interface SimJob extends BatchJobView {
@@ -125,8 +130,9 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
   const isVideo = job.type === 'video';
   const extension = isVideo ? 'mp4' : 'jpg';
   const key = isVideo ? IMAGES_PER_PRODUCT + (job.outputIndex ?? 0) : (job.outputIndex ?? 0);
+  const id = objectId(0x700000 + batch.index * 1000 + itemIndex * 10 + key);
   return {
-    id: objectId(0x700000 + batch.index * 1000 + itemIndex * 10 + key),
+    id,
     role: 'output',
     mediaType: isVideo ? 'video' : 'image',
     status: 'ready',
@@ -139,6 +145,7 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
     scope: null,
     productGid: gid,
     shotTitle: SHOT_TITLES[key] ?? null,
+    attachedAt: batch.attachedAt.get(id) ?? null,
     createdAt: isoOf(job.finishedAtMs ?? batch.createdAtMs),
   };
 }
@@ -229,6 +236,8 @@ export interface MockBatchStore {
   get(id: string): BatchDetail;
   cancel(id: string): BatchSummary;
   retryFailed(id: string): BatchSummary;
+  // Puts the ready outputs of the given items (default: all) on their products. A repeat finds them there already.
+  attachMedia(id: string, body?: AttachMediaRequest): AttachMediaResponse;
 }
 
 interface SeedSpec {
@@ -260,6 +269,7 @@ export function createMockBatchStore(): MockBatchStore {
       cancelledAtMs: null,
       retriedAtMs: null,
       items,
+      attachedAt: new Map(),
     };
     batches.set(batch.id, batch);
     return batch;
@@ -348,6 +358,34 @@ export function createMockBatchStore(): MockBatchStore {
       const retryable = terminalWithErrors && batch.retriedAtMs === null;
       if (retryable) batch.retriedAtMs = Date.now();
       return toSummary(detailOf(batch));
+    },
+
+    attachMedia: (id, body) => {
+      const batch = getBatch(id);
+      const attachedAt = new Date().toISOString();
+      const items = detailOf(batch)
+        .items.filter((item) => body?.itemIds === undefined || body.itemIds.includes(item.id))
+        .map((item): AttachMediaItemResult => {
+          const ready = item.outputs.filter((output) => output.status === 'ready');
+          const fresh = ready.filter((output) => !batch.attachedAt.has(output.id));
+          for (const output of fresh) batch.attachedAt.set(output.id, attachedAt);
+          return {
+            itemId: item.id,
+            productGid: item.productGid,
+            attached: fresh.length,
+            alreadyAttached: ready.length - fresh.length,
+            failed: 0,
+            error: null,
+          };
+        });
+      const total = (pick: (result: AttachMediaItemResult) => number): number =>
+        items.reduce((sum, result) => sum + pick(result), 0);
+      return {
+        items,
+        attached: total((result) => result.attached),
+        alreadyAttached: total((result) => result.alreadyAttached),
+        failed: total((result) => result.failed),
+      };
     },
   };
 }

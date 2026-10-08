@@ -19,11 +19,11 @@ const ready = (id: string, mediaId: string): DraftReference => slot(id, { status
 
 describe('resolutionLabel', () => {
   it('words each mode', () => {
-    expect(resolutionLabel('own_plus_common', 2)).toBe('2 references + common');
-    expect(resolutionLabel('own_plus_common', 1)).toBe('1 reference + common');
-    expect(resolutionLabel('own_only', 3)).toBe('3 references');
-    expect(resolutionLabel('own_only', 1)).toBe('1 reference');
-    expect(resolutionLabel('common_only', 0)).toBe('Uses common references');
+    expect(resolutionLabel('own_plus_common', 2)).toBe('2 photos + style');
+    expect(resolutionLabel('own_plus_common', 1)).toBe('1 photo + style');
+    expect(resolutionLabel('own_only', 3)).toBe('3 photos');
+    expect(resolutionLabel('own_only', 1)).toBe('1 photo');
+    expect(resolutionLabel('common_only', 0)).toBe('Style references only');
     expect(resolutionLabel('none', 0)).toBe('Needs a reference');
   });
 });
@@ -31,10 +31,10 @@ describe('resolutionLabel', () => {
 describe('unresolvedMessage', () => {
   it('uses the singular and the plural', () => {
     expect(unresolvedMessage(1)).toBe(
-      '1 product needs a reference. Add references to each product or add a common reference.',
+      '1 product needs a reference. Add photos to each product or add a style reference.',
     );
     expect(unresolvedMessage(3)).toBe(
-      '3 products need a reference. Add references to each product or add a common reference.',
+      '3 products need a reference. Add photos to each product or add a style reference.',
     );
   });
 });
@@ -48,9 +48,9 @@ describe('resolveProducts', () => {
     };
     const resolutions = resolveProducts(draft);
     expect(resolutions.map((r) => [r.product.id, r.mode, r.label, r.unresolved])).toEqual([
-      [p1.id, 'own_plus_common', '1 reference + common', false],
-      [p2.id, 'common_only', 'Uses common references', false],
-      [p3.id, 'common_only', 'Uses common references', false],
+      [p1.id, 'own_plus_common', '1 photo + style', false],
+      [p2.id, 'common_only', 'Style references only', false],
+      [p3.id, 'common_only', 'Style references only', false],
     ]);
     expect(unresolvedProductIds(draft)).toEqual([]);
   });

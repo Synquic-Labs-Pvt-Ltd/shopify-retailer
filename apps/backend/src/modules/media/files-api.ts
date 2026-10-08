@@ -97,6 +97,21 @@ const FILE_DELETE = /* GraphQL */ `
   }
 `;
 
+const FILE_UPDATE = /* GraphQL */ `
+  mutation FileUpdate($files: [FileUpdateInput!]!) {
+    fileUpdate(files: $files) {
+      files {
+        id
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
 async function callAdmin<T>(
   admin: ShopifyAdminClient,
   shopId: string,
@@ -337,4 +352,32 @@ export async function deleteFile(admin: ShopifyAdminClient, shopId: string, file
     throw AppError.inUse('The file is still being processed. Try again in a moment.');
   }
   throw AppError.internal(`Shopify could not delete the file: ${describeUserErrors(errors)}`);
+}
+
+// fileUpdate: add files to a product ----------------------------------------------------------
+
+const fileUpdateSchema = z.object({
+  fileUpdate: z.object({
+    files: z.array(z.object({ id: z.string() })).nullable(),
+    userErrors: z.array(userErrorSchema),
+  }),
+});
+
+export type AttachFilesResult = { ok: true } | { ok: false; code: string; message: string };
+
+// Adds ready files to the product's media (referencesToAdd takes product ids). Adding a file that is already
+// on the product changes nothing. userErrors (file missing, not ready, product missing) come back as
+// { ok: false }; a denied scope throws forbidden from the admin client.
+export async function attachFilesToProduct(
+  admin: ShopifyAdminClient,
+  shopId: string,
+  fileGids: readonly string[],
+  productGid: string,
+): Promise<AttachFilesResult> {
+  const files = fileGids.map((id) => ({ id, referencesToAdd: [productGid] }));
+  const { fileUpdate } = await callAdmin(admin, shopId, FILE_UPDATE, { files }, fileUpdateSchema);
+  if (fileUpdate.userErrors.length > 0) {
+    return { ok: false, code: fileUpdate.userErrors[0]?.code ?? 'INVALID', message: describeUserErrors(fileUpdate.userErrors) };
+  }
+  return { ok: true };
 }

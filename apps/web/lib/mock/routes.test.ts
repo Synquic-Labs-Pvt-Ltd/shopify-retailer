@@ -1,5 +1,6 @@
 import { createMockApi, resetMockApi } from '@rs/mock-api';
 import {
+  attachMediaResponseSchema,
   batchDetailSchema,
   batchListResponseSchema,
   batchSummarySchema,
@@ -142,6 +143,12 @@ const CASES: RouteCase[] = [
     schema: batchSummarySchema,
     run: async () => call('POST', `/api/v1/batches/${await createBatchId()}/retry-failed`),
   },
+  {
+    route: 'POST batches/:id/attach-media',
+    status: 200,
+    schema: attachMediaResponseSchema,
+    run: async () => call('POST', `/api/v1/batches/${await createBatchId()}/attach-media`),
+  },
 ];
 
 describe('route table', () => {
@@ -168,6 +175,18 @@ describe('request details', () => {
     expect(first.items).toHaveLength(20);
     const second = await call('GET', `/api/v1/products?limit=20&cursor=${first.pageInfo.endCursor}`);
     expect(productListResponseSchema.parse(second.body).items[0]?.id).not.toBe(first.items[0]?.id);
+  });
+
+  it('forwards the status filter and never lists a product without an image', async () => {
+    const list = async (query: string) =>
+      productListResponseSchema.parse((await call('GET', `/api/v1/products?limit=50${query}`)).body).items;
+    const [all, active, draft] = [await list(''), await list('&status=active'), await list('&status=draft')];
+    expect(draft.length).toBeGreaterThan(0);
+    expect(draft.every((item) => item.status === 'DRAFT')).toBe(true);
+    expect(active.every((item) => item.status === 'ACTIVE')).toBe(true);
+    // All keeps the other statuses (archived), so it is longer than the two tabs together.
+    expect(all.length).toBeGreaterThan(active.length + draft.length);
+    for (const items of [all, active, draft]) expect(items.every((item) => item.imageUrl !== null)).toBe(true);
   });
 
   it('defaults the page size to 25 like the backend', async () => {
@@ -221,6 +240,7 @@ describe('errors use the shared envelope and status table', () => {
     await expectError(call('POST', '/api/v1/media/uploads', { body: undefined }), 400, 'validation_failed');
     await expectError(call('GET', '/api/v1/media'), 400, 'validation_failed');
     await expectError(call('GET', '/api/v1/products?limit=500'), 400, 'validation_failed');
+    await expectError(call('GET', '/api/v1/products?status=archived'), 400, 'validation_failed');
     await expectError(call('GET', '/api/v1/batches/not-an-id'), 400, 'validation_failed');
     await expectError(call('GET', '/api/v1/products/not-a-gid'), 400, 'validation_failed');
     await expectError(call('GET', '/api/v1/products/%E0%A4%A'), 400, 'validation_failed');

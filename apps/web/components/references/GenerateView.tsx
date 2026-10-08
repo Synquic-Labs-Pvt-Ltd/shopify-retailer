@@ -121,7 +121,11 @@ export function GenerateView() {
         onRemove={actions.remove}
       />
 
-      <s-section heading={`Products (${products.length})`} padding="none">
+      <s-section
+        heading={`Products (${products.length})`}
+        subheading="Extra photos of this exact product (other angles, details). The product always follows its Shopify photos and these."
+        padding="none"
+      >
         {resolutions.map((resolution, index) => (
           <Fragment key={resolution.product.id}>
             {index > 0 ? <s-divider /> : null}

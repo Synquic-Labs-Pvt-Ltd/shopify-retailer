@@ -77,21 +77,28 @@ describe('batchProgress', () => {
 });
 
 describe('delay banner', () => {
-  it('names the pause reason and the resume time', () => {
+  it('names the pause reason and the time of the next check', () => {
     expect(delayMessage('rate_limited', '3:45 PM')).toBe('Provider busy, resumes around 3:45 PM.');
-    expect(delayMessage('daily_quota', '9:00 AM')).toBe('Daily limit reached, resumes around 9:00 AM.');
-    expect(delayMessage('provider_unavailable', '1:00 PM')).toBe('Provider unavailable, resumes around 1:00 PM.');
-    expect(delayMessage('auth_error', '1:00 PM')).toBe('Provider unavailable, resumes around 1:00 PM.');
+    expect(delayMessage('daily_quota', '9:00 AM')).toBe(
+      'Daily generation limit reached. Generation continues automatically around 9:00 AM.',
+    );
+    expect(delayMessage('provider_unavailable', '1:00 PM')).toBe(
+      'The AI service is unavailable right now. Jobs keep retrying automatically; next check around 1:00 PM.',
+    );
+    expect(delayMessage('auth_error', '1:00 PM')).toBe(delayMessage('provider_unavailable', '1:00 PM'));
   });
 
-  it('covers every lane pause reason', () => {
-    for (const reason of LANE_PAUSE_REASONS) expect(delayMessage(reason, 'x')).toMatch(/, resumes around x\.$/);
+  it('covers every lane pause reason and always shows the time', () => {
+    for (const reason of LANE_PAUSE_REASONS) expect(delayMessage(reason, 'x')).toMatch(/ around x\.$/);
   });
 
   it('formats the resume time of a delay in local time', () => {
     const resumesAt = '2026-03-10T15:45:00.000Z';
     expect(delayBannerText({ reason: 'rate_limited', resumesAt })).toBe(
       `Provider busy, resumes around ${clockTime(resumesAt)}.`,
+    );
+    expect(delayBannerText({ reason: 'daily_quota', resumesAt })).toBe(
+      `Daily generation limit reached. Generation continues automatically around ${clockTime(resumesAt)}.`,
     );
   });
 });

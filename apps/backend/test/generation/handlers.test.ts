@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { AiPart } from '../../src/modules/ai';
+import { PRODUCT_IMAGES_NOTE, STYLE_REFERENCES_NOTE, STYLE_REFERENCE_LABEL } from '../../src/modules/ai/prompts';
 import { StorageUploadError } from '../../src/modules/media';
 import { BatchItemModel } from '../../src/modules/batches/models';
 import { JobModel } from '../../src/modules/queue/models';
@@ -40,6 +41,10 @@ function describeParts(parts: AiPart[]): string[] {
 const labelsAndInputs = (parts: AiPart[]): string[] =>
   describeParts(parts).filter((line) => !line.startsWith('text: PRODUCT DATA') && !line.startsWith('text: Plan exactly'));
 
+const productView = (n: number, total: number): string =>
+  `text: PRODUCT IMAGE ${n} of ${total} (the exact product, the same item from another view)`;
+const styleLabel = (n: number): string => `text: STYLE REFERENCE ${n} (${STYLE_REFERENCE_LABEL})`;
+
 async function createWithRefs(own: string[], common: string[], productOverrides = {}) {
   const gid = kit.catalog.addProduct(productOverrides);
   const summary = await kit.create({ products: [{ productGid: gid, referenceMediaIds: own }], commonReferenceMediaIds: common });
@@ -49,7 +54,7 @@ async function createWithRefs(own: string[], common: string[], productOverrides 
 const urlOf = (id: string): string => kit.media.assets.get(id)?.url ?? '';
 
 describe('plan handler inputs (SPEC 10.2)', () => {
-  it('sends product data, up to 3 product images, capped reference images and videos by url, own first', async () => {
+  it('sends every product image (featured, own uploads, the rest), own videos as product videos, and only common references as style', async () => {
     kit.config.current.ai.planner.maxReferenceImages = 2;
     kit.config.current.ai.planner.maxReferenceVideos = 2;
     const ownVideo = kit.reference(SHOP_A, 'video');
@@ -76,17 +81,27 @@ describe('plan handler inputs (SPEC 10.2)', () => {
       'text: PRODUCT IMAGE 1',
       `inline: ${images[0]}`,
       'text: PRODUCT IMAGE 2',
-      `inline: ${images[1]}`,
-      'text: PRODUCT IMAGE 3',
-      `inline: ${images[2]}`,
-      'text: STYLE REFERENCE IMAGE 1',
       `inline: ${urlOf(ownImage)}`,
-      'text: STYLE REFERENCE IMAGE 2',
-      `inline: ${urlOf(commonImage1)}`,
-      'text: STYLE REFERENCE VIDEO 1',
+      'text: PRODUCT IMAGE 3',
+      `inline: ${images[1]}`,
+      'text: PRODUCT IMAGE 4',
+      `inline: ${images[2]}`,
+      'text: PRODUCT IMAGE 5',
+      `inline: ${images[3]}`,
+      'text: PRODUCT IMAGE 6',
+      `inline: ${images[4]}`,
+      'text: PRODUCT VIDEO 1',
       `file: ${urlOf(ownVideo)} (video/mp4)`,
-      'text: STYLE REFERENCE VIDEO 2',
+      `text: ${PRODUCT_IMAGES_NOTE}`,
+      `text: ${STYLE_REFERENCES_NOTE}`,
+      'text: STYLE REFERENCE IMAGE 1',
+      `inline: ${urlOf(commonImage1)}`,
+      'text: STYLE REFERENCE IMAGE 2',
+      `inline: ${urlOf(commonImage2)}`,
+      'text: STYLE REFERENCE VIDEO 1',
       `file: ${urlOf(commonVideo1)} (video/mp4)`,
+      'text: STYLE REFERENCE VIDEO 2',
+      `file: ${urlOf(commonVideo2)} (video/mp4)`,
     ]);
     expect(describeParts(request?.parts ?? [])[0]).toContain('"title"');
     // Videos go by url: their bytes are never downloaded for the planner.
@@ -156,8 +171,8 @@ describe('plan handler inputs (SPEC 10.2)', () => {
 });
 
 describe('image handler inputs (SPEC 10.3)', () => {
-  it('labels product images then style references (own first, capped) and sends the snapshot parameters', async () => {
-    kit.config.current.ai.image.maxStyleReferences = 3;
+  it('sends the product images (featured, own uploads, the rest; capped) before the common style references, and the snapshot parameters', async () => {
+    kit.config.current.ai.image.maxStyleReferences = 1;
     const own1 = kit.reference();
     const own2 = kit.reference();
     const common1 = kit.reference();
@@ -174,23 +189,23 @@ describe('image handler inputs (SPEC 10.3)', () => {
     const request = kit.ai.calls.image[0];
     expect(request).toMatchObject({ model: 'fake-image', location: 'us-central1', aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' });
     const lines = describeParts(request?.parts ?? []);
-    expect(lines.slice(0, 10)).toEqual([
-      'text: PRODUCT IMAGE 1',
+    // The product's own uploads sit right after the featured image; the video upload is not an image input.
+    expect(lines.slice(0, 8)).toEqual([
+      productView(1, 4),
       `inline: ${images[0]}`,
-      'text: PRODUCT IMAGE 2',
-      `inline: ${images[1]}`,
-      'text: PRODUCT IMAGE 3',
-      `inline: ${images[2]}`,
-      'text: STYLE REFERENCE 1',
+      productView(2, 4),
       `inline: ${urlOf(own1)}`,
-      'text: STYLE REFERENCE 2',
+      productView(3, 4),
       `inline: ${urlOf(own2)}`,
+      productView(4, 4),
+      `inline: ${images[1]}`,
     ]);
-    expect(lines.slice(10, 12)).toEqual(['text: STYLE REFERENCE 3', `inline: ${urlOf(common1)}`]);
-    expect(lines).toHaveLength(13);
-    expect(lines[12]).toContain('Create one photorealistic lifestyle photograph');
-    expect(lines[12]).toContain('3:4 aspect ratio');
+    expect(lines.slice(8, 10)).toEqual([styleLabel(1), `inline: ${urlOf(common1)}`]);
+    expect(lines).toHaveLength(11);
+    expect(lines[10]).toContain('Create one photorealistic lifestyle photograph');
+    expect(lines[10]).toContain('3:4 aspect ratio');
     expect(lines.join('\n')).not.toContain(urlOf(common2));
+    expect(lines.join('\n')).not.toContain(urlOf(video));
   });
 
   it('works with videos only as references: product images plus the plan text', async () => {
@@ -198,8 +213,8 @@ describe('image handler inputs (SPEC 10.3)', () => {
     const { batchId } = await createWithRefs([], [video]);
     const done = await kit.driveToTerminal(batchId);
     expect(done.status).toBe('completed');
-    const labels = describeParts(kit.ai.calls.image[0]?.parts ?? []).filter((line) => /^text: (PRODUCT IMAGE|STYLE REFERENCE) \d+$/.test(line));
-    expect(labels).toEqual(['text: PRODUCT IMAGE 1', 'text: PRODUCT IMAGE 2']);
+    const labels = describeParts(kit.ai.calls.image[0]?.parts ?? []).filter((line) => /^text: (PRODUCT IMAGE|STYLE REFERENCE) \d+/.test(line));
+    expect(labels).toEqual([productView(1, 2), productView(2, 2)]);
   });
 
   it('retries a failed download as transient, then completes', async () => {
@@ -257,6 +272,17 @@ describe('image handler inputs (SPEC 10.3)', () => {
 });
 
 describe('video handler (SPEC 10.4)', () => {
+  it('feeds Veo the featured image, then the own product uploads, then the other Shopify images, at most three', async () => {
+    const own = kit.reference();
+    const common = kit.reference();
+    const images = Array.from({ length: 4 }, (_unused, i) => `https://cdn.test/p/coat-${i + 1}.jpg`);
+    const { batchId } = await createWithRefs([own], [common], { featuredImageUrl: images[0], imageUrls: images });
+    await kit.driveToTerminal(batchId);
+    const submitted = kit.ai.calls.submit[0];
+    const sent = (submitted?.referenceImages ?? []).map((image) => new TextDecoder().decode(image.data));
+    expect(sent).toEqual([images[0], urlOf(own), images[1]]);
+  });
+
   it('schedules the first poll with the live videoPollIntervalMs and releases the worker slot', async () => {
     const ref = kit.reference();
     const { batchId } = await createWithRefs([], [ref]);

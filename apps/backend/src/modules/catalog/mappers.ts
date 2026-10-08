@@ -1,9 +1,9 @@
-import type { ProductDetail, ProductListItem, ProductSnapshot } from '@rs/shared';
+import { PRODUCT_SNAPSHOT_MAX_IMAGES, type ProductDetail, type ProductListItem, type ProductSnapshot } from '@rs/shared';
 import type { ProductListNode, ProductSnapshotNode } from './shopify-schemas';
 import { htmlToPlainText } from './text';
 
 export const SNAPSHOT_DESCRIPTION_MAX_CHARS = 2000;
-export const SNAPSHOT_MAX_IMAGES = 5;
+export const SNAPSHOT_MAX_IMAGES = PRODUCT_SNAPSHOT_MAX_IMAGES;
 export const SNAPSHOT_IMAGE_WIDTH = 1536;
 
 // Asks the Shopify CDN to resize the image server side.

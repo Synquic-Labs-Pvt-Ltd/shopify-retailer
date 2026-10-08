@@ -172,7 +172,7 @@ describe('addFiles', () => {
     }
     const files = ['1', '2', '3'].map((n) => makeFile(`f${n}.jpg`, 'image/jpeg'));
     const result = await addFiles({ kind: 'product', productId: GID }, files, LIMITS, deps);
-    expect(result.problems).toEqual(['Each product can have up to 5 references.']);
+    expect(result.problems).toEqual(['Each product can have up to 5 photos.']);
     expect(result.added).toHaveLength(1);
     expect(refs({ kind: 'product', productId: GID })).toHaveLength(5);
   });
@@ -180,7 +180,7 @@ describe('addFiles', () => {
   it('does nothing but explain when the list is full', async () => {
     const { deps, media } = setup();
     const result = await addFiles(COMMON, [makeFile('a.jpg', 'image/jpeg')], { ...LIMITS, maxCommon: 0 }, deps);
-    expect(result).toMatchObject({ added: [], problems: ['You can add up to 0 common references.'] });
+    expect(result).toMatchObject({ added: [], problems: ['You can add up to 0 style references.'] });
     expect(media.createCalls).toHaveLength(0);
   });
 

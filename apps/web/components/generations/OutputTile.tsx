@@ -21,7 +21,8 @@ interface ReadyTileProps {
   onOpen: () => void;
 }
 
-// A ready output. A video shows its poster (when the server has one) with a play glyph and its length.
+// A ready output. A video shows its poster (when the server has one) with a play glyph and its length. An output
+// that was added to its Shopify product says so.
 export function ReadyTile({ media, position, total, onOpen }: ReadyTileProps) {
   const isVideo = media.mediaType === 'video';
   const source = isVideo ? media.previewUrl : (media.previewUrl ?? media.url);
@@ -35,6 +36,9 @@ export function ReadyTile({ media, position, total, onOpen }: ReadyTileProps) {
     >
       {source === null ? null : <img className={styles.image} src={source} alt="" loading="lazy" decoding="async" />}
       {isVideo ? <PlayGlyph /> : null}
+      {media.attachedAt === null || media.attachedAt === undefined ? null : (
+        <span className={styles.attached}>On product</span>
+      )}
       {isVideo && media.durationSec !== null ? (
         <span className={styles.duration}>{formatDuration(media.durationSec)}</span>
       ) : null}
@@ -46,9 +50,10 @@ export function PendingTile({ tileKey }: { tileKey: string }) {
   return <div className={`${styles.tile} ${styles.pending}`}>{pendingTileLabel(tileKey)}</div>;
 }
 
-export function FailedTile({ jobType, errorText }: { jobType: JobType; errorText: string }) {
+// The tile has room for a few words (errorText); the full explanation is its tooltip and is also listed under the grid.
+export function FailedTile({ jobType, errorText, errorDetail }: { jobType: JobType; errorText: string; errorDetail: string }) {
   return (
-    <div className={`${styles.tile} ${styles.failed}`}>
+    <div className={`${styles.tile} ${styles.failed}`} title={errorDetail}>
       <s-icon type="alert-circle" tone="critical" />
       <span className={styles.failedTitle}>{failedTileTitle(jobType)}</span>
       <span className={styles.failedText}>{errorText}</span>

@@ -7,6 +7,7 @@ import type { MediaAssetRecord, MediaService, StorageDriver } from './index';
 
 export interface MediaServiceOptions {
   storage: StorageDriver;
+  attachToProducts: MediaService['attachToProducts'];
   // Supplied by the batches module: true while a non-terminal batch uses the asset.
   isMediaInUse: (shopId: string, mediaId: string) => Promise<boolean>;
 }
@@ -19,10 +20,11 @@ async function findOwned(shopId: string, mediaIds: string[]): Promise<MediaAsset
 }
 
 export function createMediaService(options: MediaServiceOptions): MediaService {
-  const { storage, isMediaInUse } = options;
+  const { storage, isMediaInUse, attachToProducts } = options;
 
   return {
     storage,
+    attachToProducts,
 
     async getAssets(shopId: string, mediaIds: string[]): Promise<MediaAssetRecord[]> {
       return (await findOwned(shopId, mediaIds)).map(toAssetRecord);

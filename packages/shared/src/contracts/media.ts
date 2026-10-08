@@ -17,6 +17,8 @@ export const mediaObjectSchema = z.object({
   scope: z.enum(MEDIA_SCOPES).nullable(),
   productGid: productGidSchema.nullable(),
   shotTitle: z.string().nullable(),
+  // An output that was added to its product in Shopify (POST /batches/:id/attach-media). Absent for references.
+  attachedAt: isoDateTimeSchema.nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 

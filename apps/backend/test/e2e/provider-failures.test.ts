@@ -3,7 +3,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { batchSummarySchema, healthResponseSchema, type MediaObject } from '@rs/shared';
 import { FAKE_JPEG } from '../../src/modules/ai/fake-media';
-import { classifyAiError, makeAiError } from '../../src/modules/ai';
+import { classifyAiError, makeAiError, SAFE_IMAGE_NOTE } from '../../src/modules/ai';
 import { BatchItemModel, BatchModel } from '../../src/modules/batches/models';
 import { JobModel } from '../../src/modules/queue/models';
 import { LaneStateModel } from '../../src/modules/ratelimit/models';
@@ -54,10 +54,22 @@ const paused = async (): Promise<string[]> =>
   healthResponseSchema.parse((await request(e2e.app).get('/health')).body).pausedLanes.map((lane) => `${lane.lane}:${lane.reason}`);
 
 describe('errors that fail or retry a job without pausing a lane (SPEC 11.2)', () => {
-  it('fails safety_blocked at once, retries no_output and a transient error, then retry-failed finishes the batch', async () => {
+  it('retries safety_blocked once in the safer presentation, retries no_output and a transient error, then retry-failed finishes the batch', async () => {
+    const original = provider().generateImage.bind(provider());
     const images = vi.spyOn(provider(), 'generateImage');
-    images.mockImplementationOnce(async () => ({ ok: false, error: makeAiError('safety_blocked', 'The image was blocked', { providerReason: 'IMAGE_SAFETY' }) }));
-    images.mockImplementationOnce(async () => ({ ok: false, error: makeAiError('no_output', 'The model returned no image') }));
+    const blocked = (): { ok: false; error: ReturnType<typeof makeAiError> } => ({
+      ok: false,
+      error: makeAiError('safety_blocked', 'The image was blocked', { providerReason: 'IMAGE_SAFETY' }),
+    });
+    let imageCalls = 0;
+    images.mockImplementation(async (request) => {
+      imageCalls += 1;
+      if (imageCalls === 1) return blocked();
+      if (imageCalls === 2) return { ok: false, error: makeAiError('no_output', 'The model returned no image') };
+      // The retry of the first shot (the safer presentation) is blocked again; the no_output retry goes through.
+      const prompt = request.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n');
+      return prompt.includes(SAFE_IMAGE_NOTE) ? blocked() : original(request);
+    });
     vi.spyOn(provider(), 'submitVideo').mockImplementationOnce(async () => ({
       ok: false,
       error: makeAiError('transient', 'HTTP 503 UNAVAILABLE', { httpStatus: 503, providerStatus: 'UNAVAILABLE' }),
@@ -68,9 +80,9 @@ describe('errors that fail or retry a job without pausing a lane (SPEC 11.2)', (
     await e2e.settle();
 
     const jobs = await JobModel.find({ batchId }).lean();
-    const blocked = jobs.filter((job) => job.status === 'failed');
-    expect(blocked).toHaveLength(1);
-    expect(blocked[0]).toMatchObject({ type: 'image', attempts: 1, deferrals: 0, error: { code: 'safety_blocked', retryable: false, providerReason: 'IMAGE_SAFETY' } });
+    const failedJobs = jobs.filter((job) => job.status === 'failed');
+    expect(failedJobs).toHaveLength(1);
+    expect(failedJobs[0]).toMatchObject({ type: 'image', attempts: 2, deferrals: 0, error: { code: 'safety_blocked', retryable: false, providerReason: 'IMAGE_SAFETY' } });
     const retriedImage = jobs.filter((job) => job.type === 'image' && job.status === 'succeeded');
     expect(retriedImage).toHaveLength(1);
     expect(retriedImage[0]).toMatchObject({ attempts: 2 });
@@ -85,6 +97,7 @@ describe('errors that fail or retry a job without pausing a lane (SPEC 11.2)', (
     expect(detail.items[0]?.jobs.filter((job) => job.status === 'failed').map((job) => job.errorCode)).toEqual(['safety_blocked']);
 
     // The provider behaves again: retry-failed gives the blocked shot a fresh run.
+    images.mockRestore();
     expect((await client.post(`/api/v1/batches/${batchId}/retry-failed`)).status).toBe(200);
     expect((await e2e.driveBatch(batchId, { timeoutMs: 60_000 })).status).toBe('completed');
     await e2e.settle();

@@ -16,7 +16,7 @@ function plural(count: number, one: string, many: string): string {
 export function unresolvedBanner(count: number): { heading: string; body: string } {
   return {
     heading: count === 1 ? '1 product needs a reference.' : `${count} products need a reference.`,
-    body: 'Add references to each product, or add common references that apply to every product.',
+    body: 'Add photos to each product, or add style references that apply to every product.',
   };
 }
 

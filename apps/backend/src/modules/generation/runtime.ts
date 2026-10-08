@@ -100,10 +100,43 @@ export interface MediaSource {
   mimeType: string;
 }
 
-// Featured image first, without duplicates.
-export function productImageSources(snapshot: ProductSnapshot): MediaSource[] {
+// The same CDN image can come with different query strings (version, width): compare without them.
+const imageKey = (url: string): string => url.split('?')[0] ?? url;
+
+// Every Shopify image of the product, featured first, without duplicates.
+export function shopifyImageSources(snapshot: ProductSnapshot): MediaSource[] {
   const urls = [snapshot.featuredImageUrl, ...snapshot.imageUrls].filter((url): url is string => url !== null && url.length > 0);
-  return [...new Set(urls)].map((url) => ({ url, mimeType: 'image/jpeg' }));
+  const seen = new Set<string>();
+  return urls.flatMap((url) => {
+    const key = imageKey(url);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ url, mimeType: 'image/jpeg' }];
+  });
+}
+
+export interface SplitReferences {
+  // Uploaded for this product alone: more photos and videos of the exact product.
+  own: MediaAssetRecord[];
+  // Common references: style only (setting, light, mood), never the product.
+  style: MediaAssetRecord[];
+}
+
+export function splitReferences(ctx: BatchItemContext): SplitReferences {
+  const own = new Set(ctx.ownReferenceMediaIds);
+  return {
+    own: ctx.references.filter((asset) => own.has(asset.id)),
+    style: ctx.references.filter((asset) => !own.has(asset.id)),
+  };
+}
+
+// Everything that shows the exact product: the featured image, the merchant's uploads for this product, then the
+// rest of the Shopify images. Callers cap the list to what their model accepts.
+export function productImageSources(ctx: BatchItemContext): MediaSource[] {
+  const shopify = shopifyImageSources(ctx.productSnapshot);
+  const uploads = referenceSources(splitReferences(ctx).own, 'image');
+  const [featured, ...rest] = shopify;
+  return [...(featured === undefined ? [] : [featured]), ...uploads.map(({ url, mimeType }) => ({ url, mimeType })), ...rest];
 }
 
 export function referenceSources(references: readonly MediaAssetRecord[], type: 'image' | 'video'): (MediaSource & { asset: MediaAssetRecord })[] {

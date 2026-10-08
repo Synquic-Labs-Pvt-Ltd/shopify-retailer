@@ -33,6 +33,7 @@ export function toMediaObject(doc: MediaAssetDoc): MediaObject {
     scope: doc.scope ?? null,
     productGid: doc.productGid ?? null,
     shotTitle: doc.shotTitle ?? null,
+    attachedAt: doc.attachedAt?.toISOString() ?? null,
     createdAt: doc.createdAt.toISOString(),
   };
 }

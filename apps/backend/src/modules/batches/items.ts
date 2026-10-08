@@ -37,6 +37,7 @@ export function createItemService(deps: ItemDeps) {
       productGid: item.productGid,
       productSnapshot: item.productSnapshot,
       effectiveReferenceMediaIds: effective,
+      ownReferenceMediaIds: item.ownReferenceMediaIds.map((id) => id.toHexString()),
       references,
       referenceMode: item.referenceMode,
       creativePlan: item.creativePlan ?? null,

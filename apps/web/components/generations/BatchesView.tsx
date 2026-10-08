@@ -3,11 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { errorMessage } from '@/lib/api/errors';
-import { useBatches } from '@/lib/api/hooks';
+import { pollNotice, useBatches } from '@/lib/api/hooks';
 import { pageItems } from '@/lib/api/pages';
 import { plural } from '@/lib/batch/format';
 import { BatchTable } from './BatchTable';
 import { BatchTabs } from './BatchTabs';
+import { ConnectionNotice } from './ConnectionNotice';
 import { filterByTab, type BatchTab } from './logic';
 
 function EmptyList() {
@@ -29,6 +30,11 @@ export function BatchesView() {
   const batches = useMemo(() => pageItems(query.data), [query.data]);
   const visible = useMemo(() => filterByTab(batches, tab), [batches, tab]);
 
+  const notice = pollNotice({
+    hasData: query.data !== undefined && !query.isFetchNextPageError,
+    error: query.error,
+    failureReason: query.failureReason,
+  });
   const loadFailed = query.isError && query.data === undefined;
   const empty = query.isSuccess && batches.length === 0;
   const retry = () => void query.refetch();
@@ -48,7 +54,8 @@ export function BatchesView() {
         </s-banner>
       ) : null}
 
-      {query.isRefetchError ? (
+      {notice === 'reconnecting' ? <ConnectionNotice /> : null}
+      {notice === 'stopped' ? (
         <s-banner tone="warning" heading="Could not refresh the list">
           The generations below may be out of date.
           <s-button slot="secondary-actions" onClick={retry}>

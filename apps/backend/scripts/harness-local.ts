@@ -122,11 +122,13 @@ function describeError(error: ClassifiedError): string {
   return lines.join('\n');
 }
 
+const VEO_MAX_REFERENCE_IMAGES = 3;
+
 // Reference mode sends up to 3 product images as reference assets; image-to-video sends the first as the first frame.
 export function videoImageInputs(config: GenerationConfig, productImages: ImageInput[]): Pick<VideoSubmitRequest, 'referenceImages' | 'startImage'> {
   const first = productImages[0];
   if (config.video.mode === 'image_to_video' && first !== undefined) return { referenceImages: [], startImage: first };
-  return { referenceImages: productImages.slice(0, config.ai.image.maxProductImages) };
+  return { referenceImages: productImages.slice(0, VEO_MAX_REFERENCE_IMAGES) };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
@@ -195,7 +197,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
     location: config.locations.planner,
     signal: AbortSignal.timeout(TIMEOUT_MS.plan),
     systemPrompt,
-    parts: buildPlannerParts({ snapshot, productImages, referenceImages, referenceVideos, counts }, config),
+    parts: buildPlannerParts({ snapshot, productImages, productVideos: [], referenceImages, referenceVideos, counts }, config),
     ...counts,
     temperature: config.ai.planner.temperature,
   });
@@ -243,7 +245,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   const videoTemplate = configService.getPrompt('video.user').text;
   const pollIntervalMs = options.pollIntervalMs ?? (config.provider === 'fake' ? 50 : config.queue.videoPollIntervalMs);
   for (const [index, shot] of plan.videoShots.entries()) {
-    const prompt = renderVideoPrompt(videoTemplate, shot);
+    const prompt = renderVideoPrompt(videoTemplate, plan, shot);
     write(`prompts/video-${index + 1}.txt`, prompt);
     const target = { model: config.models.video, location: config.locations.video };
     const submitted = await provider.submitVideo({

@@ -10,6 +10,10 @@ export function errorMessage(error: unknown, fallback: string = FALLBACK_MESSAGE
   switch (error.code) {
     case 'network_error':
       return 'Cannot reach the server. Check your connection and try again.';
+    case 'timeout':
+      return 'The server took too long to answer. Try again.';
+    case 'service_unavailable':
+      return 'The service is busy or temporarily down. Try again in a moment.';
     case 'unauthorized':
       return 'Your session expired. Log in again.';
     case 'shop_reauth_required':

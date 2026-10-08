@@ -27,7 +27,7 @@ export function FileDropZone({ onFiles }: { onFiles: (files: File[]) => void }) 
       ref={ref}
       accept={FILE_ACCEPT}
       multiple
-      label="Reference files"
+      label="Style reference files"
       labelAccessibilityVisibility="exclusive"
     >
       <s-box padding="large-100">

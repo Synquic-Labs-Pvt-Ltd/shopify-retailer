@@ -7,8 +7,11 @@ export {
   useCreateBatch,
   useCancelBatch,
   useRetryFailed,
+  useAttachMedia,
   batchListPollInterval,
   batchDetailPollInterval,
+  pollNotice,
+  type PollNotice,
   BATCH_LIST_POLL_MS,
   BATCH_DETAIL_POLL_MS,
 } from './batches';

@@ -61,7 +61,7 @@ describe('catalog service', () => {
       respondWith({
         list: {
           products: {
-            nodes: [listNode(1), listNode(2, { featuredMedia: null, mediaCount: null, variantsCount: null, status: 'DRAFT' })],
+            nodes: [listNode(1), listNode(2, { mediaCount: null, variantsCount: null, status: 'DRAFT' })],
             pageInfo: { hasNextPage: true, endCursor: 'cursor-2' },
           },
         },
@@ -84,7 +84,7 @@ describe('catalog service', () => {
       mediaCount: 4,
       variantsCount: 2,
     });
-    expect(result.items[1]).toMatchObject({ status: 'DRAFT', imageUrl: null, mediaCount: 0, variantsCount: 0 });
+    expect(result.items[1]).toMatchObject({ status: 'DRAFT', mediaCount: 0, variantsCount: 0 });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.shopId).toBe(SHOP_ID);
     expect(calls[0]?.query).toContain('sortKey: UPDATED_AT');
@@ -103,7 +103,51 @@ describe('catalog service', () => {
     expect(calls[0]?.variables).toEqual({ first: 25, after: 'abc', query: 'title:*blue* title:*status\\:draft*' });
   });
 
-  it('returns the detail with plain text, five resized images and the gid', async () => {
+  it('never lists a product without an image, and reads on to the next Shopify page when a page comes up short', async () => {
+    let page = 0;
+    const { admin, calls } = createMockAdmin((call) => {
+      if (!call.query.includes('query ProductList')) throw new Error('unexpected query');
+      page += 1;
+      if (page === 1) {
+        return { products: { nodes: [listNode(1, { featuredMedia: null }), listNode(2, { featuredMedia: null })], pageInfo: { hasNextPage: true, endCursor: 'c-2' } } };
+      }
+      return { products: { nodes: [listNode(3), listNode(4)], pageInfo: { hasNextPage: true, endCursor: 'c-4' } } };
+    });
+    const { service } = createCatalogModule({ admin, requireAuth: fakeRequireAuth, logger: silentLogger });
+
+    const result = await service.listProducts(SHOP_ID, { limit: 2 });
+
+    expect(result.items.map((item) => item.id)).toEqual([productGid(3), productGid(4)]);
+    expect(result.pageInfo).toEqual({ endCursor: 'c-4', hasNextPage: true });
+    expect(calls.map((call) => call.variables?.after)).toEqual([null, 'c-2']);
+  });
+
+  it('gives up after a few requests when almost nothing in the catalog has an image, and still returns a cursor', async () => {
+    let page = 0;
+    const { admin, calls } = createMockAdmin(() => {
+      page += 1;
+      return { products: { nodes: [listNode(page, { featuredMedia: null })], pageInfo: { hasNextPage: true, endCursor: `c-${page}` } } };
+    });
+    const { service } = createCatalogModule({ admin, requireAuth: fakeRequireAuth, logger: silentLogger });
+
+    const result = await service.listProducts(SHOP_ID, { limit: 5 });
+
+    expect(result.items).toEqual([]);
+    expect(result.pageInfo).toEqual({ endCursor: 'c-4', hasNextPage: true });
+    expect(calls).toHaveLength(4);
+  });
+
+  it('sends the status tab to Shopify together with the title terms', async () => {
+    const { admin, calls } = createMockAdmin(respondWith({ list: { products: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } }));
+    const { service } = createCatalogModule({ admin, requireAuth: fakeRequireAuth, logger: silentLogger });
+
+    await service.listProducts(SHOP_ID, { limit: 10, status: 'draft', q: 'blue' });
+    await service.listProducts(SHOP_ID, { limit: 10, status: 'active' });
+
+    expect(calls.map((call) => call.variables?.query)).toEqual(['status:draft title:*blue*', 'status:active']);
+  });
+
+  it('returns the detail with plain text, every image up to twelve, resized, and the gid', async () => {
     const { admin, calls } = createMockAdmin(respondWith({ detail: { product: snapshotNode(7) } }));
     const { service } = createCatalogModule({ admin, requireAuth: fakeRequireAuth, logger: silentLogger });
 
@@ -114,7 +158,7 @@ describe('catalog service', () => {
     expect(detail.descriptionText).toBe('A ceramic lamp & shade.\nWarm light.');
     expect(detail.tags).toEqual(['home', 'lamp']);
     expect(detail.options).toEqual([{ name: 'Color', values: ['Blue', 'White'] }]);
-    expect(detail.imageUrls).toHaveLength(5);
+    expect(detail.imageUrls).toHaveLength(6);
     expect(detail.imageUrls[0]).toBe('https://cdn.shopify.com/s/files/1/0001/lamp-1.jpg?v=1&width=1536');
     expect(detail.imageUrls[1]).toBe('https://cdn.shopify.com/s/files/1/0001/lamp-2.jpg?width=1536');
     expect(detail.featuredImageUrl).toBe('https://cdn.shopify.com/s/files/1/0001/lamp-featured.jpg?v=17&width=1536');

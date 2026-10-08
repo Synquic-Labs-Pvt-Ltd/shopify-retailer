@@ -1,6 +1,8 @@
 'use client';
 
 import type { ProductListItem } from '@rs/shared';
+import { useRef } from 'react';
+import { useElementEvent } from '@/components/polaris/useElementEvent';
 import { ProductThumb } from './ProductThumb';
 import { SelectCheckbox } from './SelectCheckbox';
 import { statusBadge, type CheckState } from './logic';
@@ -11,10 +13,18 @@ interface ProductsTableProps {
   items: readonly ProductListItem[];
   // True while the first page is loading: placeholder rows are shown instead of products.
   loading: boolean;
+  // True while another page is being fetched: the table keeps its rows and ignores clicks.
+  busy: boolean;
+  hasPreviousPage: boolean;
+  hasNextPage: boolean;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
   selectedIds: ReadonlySet<string>;
   headerState: CheckState;
   // The selection is read from the draft, so it cannot change before the draft has been loaded.
   disabled: boolean;
+  // A select-all is fetching every page: the header checkbox waits for it.
+  selecting: boolean;
   onToggle: (item: ProductListItem, selected: boolean) => void;
   onToggleAll: (selected: boolean) => void;
 }
@@ -85,16 +95,36 @@ function ProductRow({
   );
 }
 
-export function ProductsTable({ items, loading, selectedIds, headerState, disabled, onToggle, onToggleAll }: ProductsTableProps) {
+export function ProductsTable({
+  items,
+  loading,
+  busy,
+  hasPreviousPage,
+  hasNextPage,
+  onPreviousPage,
+  onNextPage,
+  selectedIds,
+  headerState,
+  disabled,
+  selecting,
+  onToggle,
+  onToggleAll,
+}: ProductsTableProps) {
+  // The table is always mounted while this component is, so the listeners stay attached. They are native: React 19
+  // does not route the lowercase Polaris events `previouspage` and `nextpage` to props.
+  const tableRef = useRef<HTMLElementTagNameMap['s-table']>(null);
+  useElementEvent(tableRef, 'previouspage', onPreviousPage);
+  useElementEvent(tableRef, 'nextpage', onNextPage);
+
   return (
-    <s-table>
+    <s-table ref={tableRef} paginate hasPreviousPage={hasPreviousPage} hasNextPage={hasNextPage} loading={loading || busy}>
       <s-table-header-row>
         <s-table-header listSlot="inline">
           <SelectCheckbox
             checked={headerState === 'all'}
             indeterminate={headerState === 'some'}
-            disabled={disabled || loading || items.length === 0}
-            label="Select all listed products"
+            disabled={disabled || loading || selecting || items.length === 0}
+            label="Select all matching products"
             onToggle={onToggleAll}
           />
         </s-table-header>

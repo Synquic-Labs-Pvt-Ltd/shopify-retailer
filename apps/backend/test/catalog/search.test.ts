@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTitleSearch } from '../../src/modules/catalog/search';
+import { buildProductSearch, buildTitleSearch } from '../../src/modules/catalog/search';
 
 describe('buildTitleSearch', () => {
   it('returns null when there is nothing to search', () => {
@@ -37,5 +37,21 @@ describe('buildTitleSearch', () => {
   it('limits the number of terms', () => {
     const terms = buildTitleSearch('a b c d e f g h i j');
     expect(terms?.split(' ')).toHaveLength(8);
+  });
+});
+
+describe('buildProductSearch', () => {
+  it('is null without a status tab or searchable text', () => {
+    expect(buildProductSearch(undefined, undefined)).toBeNull();
+    expect(buildProductSearch('  ', undefined)).toBeNull();
+  });
+
+  it('adds the status filter in front of the title terms', () => {
+    expect(buildProductSearch(undefined, 'active')).toBe('status:active');
+    expect(buildProductSearch('blue lamp', 'draft')).toBe('status:draft title:*blue* title:*lamp*');
+  });
+
+  it('keeps typed text from becoming a filter of its own', () => {
+    expect(buildProductSearch('status:draft', 'active')).toBe('status:active title:*status\\:draft*');
   });
 });

@@ -2,11 +2,18 @@ import { z } from 'zod';
 import { PRODUCT_STATUSES } from '../enums';
 import { pageInfoSchema, paginationQuerySchema, productGidSchema } from './common';
 
+// Every product image the snapshot keeps, the featured one included.
+export const PRODUCT_SNAPSHOT_MAX_IMAGES = 12;
+
 export const productStatusSchema = z.enum(PRODUCT_STATUSES);
 
 // GET /api/v1/products. q is passed to Shopify search syntax, scoped to title (SPEC 8.5).
+export const PRODUCT_LIST_STATUS_FILTERS = ['active', 'draft'] as const;
+
+// status narrows the list on the server so pages and counts stay consistent; omitted lists every status.
 export const productListQuerySchema = paginationQuerySchema.extend({
   q: z.string().trim().max(200).optional(),
+  status: z.enum(PRODUCT_LIST_STATUS_FILTERS).optional(),
 });
 
 export const productListItemSchema = z.object({
@@ -45,7 +52,7 @@ export const productSnapshotSchema = z.object({
   tags: z.array(z.string()),
   options: z.array(productOptionSchema),
   featuredImageUrl: z.string().nullable(),
-  imageUrls: z.array(z.string()).max(5),
+  imageUrls: z.array(z.string()).max(PRODUCT_SNAPSHOT_MAX_IMAGES),
 });
 
 export const productDetailSchema = productSnapshotSchema.extend({

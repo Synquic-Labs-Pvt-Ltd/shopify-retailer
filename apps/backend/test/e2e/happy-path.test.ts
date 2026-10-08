@@ -162,7 +162,7 @@ describe('products', () => {
     expect(res.status).toBe(200);
     const detailBody = productDetailSchema.parse(res.body);
     expect(detailBody.descriptionText).toBe('Hand glazed lamp.\nLinen shade');
-    expect(detailBody.imageUrls).toHaveLength(5);
+    expect(detailBody.imageUrls).toHaveLength(6);
     expect(detailBody.featuredImageUrl).toContain('width=1536');
     expect(detailBody.imageUrls.every((url) => url.includes('width=1536'))).toBe(true);
     expect((await client.get(`/api/v1/products/${encodeURIComponent('gid://shopify/Product/1')}`)).status).toBe(404);
@@ -366,8 +366,9 @@ describe('batch', () => {
 
   it('fetched the references the way the spec describes', async () => {
     const fetched = (url: string): number => stub().calls.filter((call) => call.kind === 'cdn' && call.url.startsWith(without(url)) && call.status === 200).length;
-    // plan + 2 image jobs of the first product use its own reference; every product uses the common image the same way.
-    expect(fetched(references.ownImage.url ?? '')).toBe(3);
+    // The first product's own upload is one more photo of that product: the plan, its 2 image jobs and its video use it.
+    expect(fetched(references.ownImage.url ?? '')).toBe(4);
+    // Every product uses the common image as style, in the plan and the 2 image jobs.
     expect(fetched(references.commonImage.url ?? '')).toBe(9);
     // Reference videos reach the planner by public url only.
     expect(fetched(references.commonVideo.url ?? '')).toBe(0);

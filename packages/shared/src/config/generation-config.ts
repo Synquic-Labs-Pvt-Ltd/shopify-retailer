@@ -54,6 +54,8 @@ export const aiConfigSchema = z.strictObject({
     maxStyleReferences: nonNegativeInt,
   }),
   planner: z.strictObject({
+    // The planner is a text model that reads many images, so it gets every product image up to this cap.
+    maxProductImages: positiveInt.default(10),
     maxReferenceImages: nonNegativeInt,
     maxReferenceVideos: nonNegativeInt,
     temperature: z.number().min(0).max(2),
@@ -204,8 +206,8 @@ export const defaultGenerationConfig: GenerationConfig = {
   locations: { planner: 'us-central1', image: 'us-central1', video: 'us-central1' },
   image: { aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' },
   ai: {
-    image: { maxProductImages: 3, maxStyleReferences: 3 },
-    planner: { maxReferenceImages: 6, maxReferenceVideos: 2, temperature: 0.6 },
+    image: { maxProductImages: 4, maxStyleReferences: 2 },
+    planner: { maxProductImages: 10, maxReferenceImages: 6, maxReferenceVideos: 2, temperature: 0.6 },
   },
   video: {
     mode: 'reference_images',

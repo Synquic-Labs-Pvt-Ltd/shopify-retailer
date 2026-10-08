@@ -114,6 +114,29 @@ export const batchDetailSchema = batchSummarySchema.extend({
   delay: batchDelaySchema.nullable(),
 });
 
+// POST /api/v1/batches/:id/attach-media: adds the ready outputs of the batch to the Shopify products they were made
+// for (one product per item). itemIds limits it to some items; omitted means every item of the batch.
+export const attachMediaRequestSchema = z.object({
+  itemIds: z.array(objectIdSchema).min(1).max(100).optional(),
+});
+
+export const attachMediaItemResultSchema = z.object({
+  itemId: objectIdSchema,
+  productGid: productGidSchema,
+  // Newly added to the product, already on it from an earlier request, and not added (see error).
+  attached: z.number().int().min(0),
+  alreadyAttached: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  error: z.string().nullable(),
+});
+
+export const attachMediaResponseSchema = z.object({
+  items: z.array(attachMediaItemResultSchema),
+  attached: z.number().int().min(0),
+  alreadyAttached: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+
 export type BatchConfigSnapshot = z.infer<typeof batchConfigSnapshotSchema>;
 export type BatchCounts = z.infer<typeof batchCountsSchema>;
 export type CreateBatchProduct = z.infer<typeof createBatchProductSchema>;
@@ -127,3 +150,6 @@ export type BatchJobView = z.infer<typeof batchJobViewSchema>;
 export type BatchItemView = z.infer<typeof batchItemViewSchema>;
 export type BatchDelay = z.infer<typeof batchDelaySchema>;
 export type BatchDetail = z.infer<typeof batchDetailSchema>;
+export type AttachMediaRequest = z.infer<typeof attachMediaRequestSchema>;
+export type AttachMediaItemResult = z.infer<typeof attachMediaItemResultSchema>;
+export type AttachMediaResponse = z.infer<typeof attachMediaResponseSchema>;

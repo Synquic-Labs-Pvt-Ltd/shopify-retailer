@@ -68,8 +68,24 @@ export interface StorageDriver {
   delete(shopId: string, mediaId: string): Promise<void>;
 }
 
+// One product and the outputs to add to it.
+export interface AttachTarget {
+  productGid: string;
+  mediaIds: string[];
+}
+
+export interface AttachResult {
+  productGid: string;
+  attached: string[];
+  alreadyAttached: string[];
+  failed: { mediaId: string; message: string }[];
+}
+
 export interface MediaService {
   readonly storage: StorageDriver;
+  // Adds ready outputs to the Shopify products they were made for. Never throws for one product's failure (it is in
+  // the result); throws for a shop-level failure (login needed, Shopify unreachable or throttling).
+  attachToProducts(shopId: string, targets: AttachTarget[]): Promise<AttachResult[]>;
   // Assets that belong to the shop. Callers check role and status themselves.
   getAssets(shopId: string, mediaIds: string[]): Promise<MediaAssetRecord[]>;
   getObjects(shopId: string, mediaIds: string[], options?: { refresh?: boolean }): Promise<MediaObject[]>;

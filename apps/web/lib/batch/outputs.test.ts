@@ -1,6 +1,6 @@
-import type { BatchItemView, BatchJobView, MediaObject } from '@rs/shared';
+import { JOB_ERROR_CODES, type BatchItemView, type BatchJobView, type MediaObject } from '@rs/shared';
 import { describe, expect, it } from 'vitest';
-import { errorCodeText, resultTiles, usableOutputs } from './outputs';
+import { errorCodeDetail, errorCodeText, failureNotes, resultTiles, usableOutputs } from './outputs';
 
 const gid = 'gid://shopify/Product/1';
 
@@ -91,7 +91,14 @@ describe('resultTiles', () => {
       { kind: 'pending', key: 'pending-image-1' },
       { kind: 'pending', key: 'pending-video-1' },
       { kind: 'pending', key: 'pending-image-2' },
-      { kind: 'failed', key: 'failed-video-0', jobType: 'video', errorCode: 'safety_blocked', errorText: 'Safety blocked' },
+      {
+        kind: 'failed',
+        key: 'failed-video-0',
+        jobType: 'video',
+        errorCode: 'safety_blocked',
+        errorText: 'Blocked by safety filters',
+        errorDetail: "The AI provider's safety filters blocked this result. Try a different reference style or retry.",
+      },
     ]);
   });
 
@@ -110,7 +117,14 @@ describe('resultTiles', () => {
 
   it('gives a failed job without a code the unknown error text', () => {
     const [tile] = resultTiles(item([], [job({ type: 'image', outputIndex: null, status: 'failed' })]));
-    expect(tile).toEqual({ kind: 'failed', key: 'failed-image-0', jobType: 'image', errorCode: null, errorText: 'Unknown error' });
+    expect(tile).toEqual({
+      kind: 'failed',
+      key: 'failed-image-0',
+      jobType: 'image',
+      errorCode: null,
+      errorText: 'Unknown error',
+      errorDetail: 'The reason is unknown. Use Retry failed to try again.',
+    });
   });
 
   it('shows no tile for an item with nothing to show', () => {
@@ -118,11 +132,69 @@ describe('resultTiles', () => {
   });
 });
 
-describe('errorCodeText', () => {
-  it('capitalises and spaces the code', () => {
-    expect(errorCodeText('safety_blocked')).toBe('Safety blocked');
-    expect(errorCodeText('shopify_upload_failed')).toBe('Shopify upload failed');
-    expect(errorCodeText('timeout')).toBe('Timeout');
+describe('error texts', () => {
+  it('explains the errors the merchant can act on in a full sentence', () => {
+    expect(errorCodeDetail('daily_quota')).toBe(
+      'The daily generation quota was used up. It resets automatically; retry after it resets.',
+    );
+    expect(errorCodeDetail('provider_unavailable')).toBe(
+      'The AI service is unavailable right now (billing or access issue on the provider side). Retry later or contact support.',
+    );
+    expect(errorCodeDetail('safety_blocked')).toBe(
+      "The AI provider's safety filters blocked this result. Try a different reference style or retry.",
+    );
+    expect(errorCodeDetail('timeout')).toBe('The AI provider took too long to respond. Use Retry failed to try again.');
+    expect(errorCodeDetail('shopify_upload_failed')).toBe(
+      'Could not save the result to your Shopify files. Check app permissions and retry.',
+    );
+  });
+
+  it('has a short tile text and a one sentence explanation for every error code', () => {
+    for (const code of JOB_ERROR_CODES) {
+      const short = errorCodeText(code);
+      const detail = errorCodeDetail(code);
+      // The tile is 116 px wide inside its padding: a few short lines at most.
+      expect(short.length).toBeGreaterThan(0);
+      expect(short.length).toBeLessThanOrEqual(30);
+      expect(short).not.toMatch(/_/);
+      expect(detail).toMatch(/^[A-Z].*[.]$/);
+      expect(detail).not.toMatch(/_/);
+      expect(detail.length).toBeGreaterThan(short.length);
+    }
+  });
+
+  it('gives every error code its own explanation', () => {
+    const details = JOB_ERROR_CODES.map(errorCodeDetail);
+    expect(new Set(details).size).toBe(details.length);
+    expect(errorCodeDetail('daily_quota')).toMatch(/resets/);
+    expect(errorCodeDetail('provider_unavailable')).toMatch(/contact support/);
+    expect(errorCodeDetail('safety_blocked')).toMatch(/different reference/);
+  });
+
+  it('knows what to say for a failed job without a code', () => {
     expect(errorCodeText(null)).toBe('Unknown error');
+    expect(errorCodeDetail(null)).toMatch(/Retry failed/);
+  });
+});
+
+describe('failureNotes', () => {
+  it('lists each distinct explanation once, in the order the failures appear', () => {
+    const tiles = resultTiles(
+      item(
+        [],
+        [
+          job({ type: 'image', outputIndex: 0, status: 'failed', errorCode: 'timeout' }),
+          job({ type: 'image', outputIndex: 1, status: 'failed', errorCode: 'safety_blocked' }),
+          job({ type: 'video', outputIndex: 0, status: 'failed', errorCode: 'timeout' }),
+          job({ type: 'image', outputIndex: 2, status: 'running' }),
+        ],
+      ),
+    );
+    expect(failureNotes(tiles)).toEqual([errorCodeDetail('timeout'), errorCodeDetail('safety_blocked')]);
+  });
+
+  it('is empty when nothing failed', () => {
+    expect(failureNotes(resultTiles(item([media(1)], [job({ status: 'succeeded' })])))).toEqual([]);
+    expect(failureNotes([])).toEqual([]);
   });
 });

@@ -113,8 +113,8 @@ describe('remainingRoom and limitMessage', () => {
   });
 
   it('names the limit', () => {
-    expect(limitMessage({ kind: 'common' }, LIMITS)).toBe('You can add up to 10 common references.');
-    expect(limitMessage({ kind: 'product', productId: 'x' }, LIMITS)).toBe('Each product can have up to 5 references.');
+    expect(limitMessage({ kind: 'common' }, LIMITS)).toBe('You can add up to 10 style references.');
+    expect(limitMessage({ kind: 'product', productId: 'x' }, LIMITS)).toBe('Each product can have up to 5 photos.');
   });
 });
 

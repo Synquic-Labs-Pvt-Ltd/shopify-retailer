@@ -44,7 +44,7 @@ describe('copy', () => {
     expect(unresolvedBanner(1).heading).toBe('1 product needs a reference.');
     expect(unresolvedBanner(3)).toEqual({
       heading: '3 products need a reference.',
-      body: 'Add references to each product, or add common references that apply to every product.',
+      body: 'Add photos to each product, or add style references that apply to every product.',
     });
   });
 
@@ -81,13 +81,13 @@ describe('resolutionBadge', () => {
     });
   });
 
-  it('shows the resolution label in info, or neutral for common references only', () => {
+  it('shows the resolution label in info, or neutral for style references only', () => {
     expect(resolutionBadge({ mode: 'own_only', label: '2 references', unresolved: false }, false).tone).toBe('info');
     expect(resolutionBadge({ mode: 'own_plus_common', label: '1 reference + common', unresolved: false }, false).tone).toBe(
       'info',
     );
-    expect(resolutionBadge({ mode: 'common_only', label: 'Uses common references', unresolved: false }, false)).toEqual({
-      label: 'Uses common references',
+    expect(resolutionBadge({ mode: 'common_only', label: 'Style references only', unresolved: false }, false)).toEqual({
+      label: 'Style references only',
       tone: 'neutral',
     });
   });

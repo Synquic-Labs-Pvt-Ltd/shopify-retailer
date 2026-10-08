@@ -86,6 +86,6 @@ export function remainingRoom(
 
 export function limitMessage(target: ReferenceTarget, limits: ReferenceLimits): string {
   return target.kind === 'common'
-    ? `You can add up to ${limits.maxCommon} common references.`
-    : `Each product can have up to ${limits.maxPerProduct} references.`;
+    ? `You can add up to ${limits.maxCommon} style references.`
+    : `Each product can have up to ${limits.maxPerProduct} photos.`;
 }
