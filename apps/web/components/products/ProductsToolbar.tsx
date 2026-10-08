@@ -22,22 +22,22 @@ export function ProductsToolbar({ tab, onTabChange, search, onSearchChange }: Pr
   return (
     <s-box padding="small-100 base">
       <s-grid gridTemplateColumns="auto 1fr" gap="base" alignItems="center">
-        <s-button-group gap="none" accessibilityLabel="Filter by status">
-          {PRODUCT_STATUS_TABS.map((value) => (
-            <s-press-button
-              key={value}
-              variant="tertiary"
-              pressed={value === tab}
-              onClick={(event) => {
-                // The button flips itself when pressed: keep the chosen tab pressed.
-                event.currentTarget.pressed = true;
-                onTabChange(value);
-              }}
-            >
-              {TAB_LABELS[value]}
-            </s-press-button>
-          ))}
-        </s-button-group>
+        <s-stack direction="inline" alignItems="center" gap="small-200">
+          {PRODUCT_STATUS_TABS.map((value) => {
+            const selected = value === tab;
+            const label = TAB_LABELS[value];
+            return (
+              <s-clickable-chip
+                key={value}
+                color={selected ? 'strong' : 'base'}
+                accessibilityLabel={selected ? `${label}, selected` : label}
+                onClick={() => onTabChange(value)}
+              >
+                {label}
+              </s-clickable-chip>
+            );
+          })}
+        </s-stack>
         <s-search-field
           ref={searchRef}
           label="Search products"

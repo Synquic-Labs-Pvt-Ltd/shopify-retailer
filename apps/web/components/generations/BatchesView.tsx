@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { errorMessage } from '@/lib/api/errors';
 import { useBatches } from '@/lib/api/hooks';
@@ -22,6 +23,7 @@ function EmptyList() {
 
 // SPEC 16.2 Queue: every batch with its progress. The hooks poll while any loaded batch is still running.
 export function BatchesView() {
+  const router = useRouter();
   const query = useBatches();
   const [tab, setTab] = useState<BatchTab>('all');
   const batches = useMemo(() => pageItems(query.data), [query.data]);
@@ -33,7 +35,7 @@ export function BatchesView() {
 
   return (
     <s-page heading="Generations">
-      <s-button slot="primary-action" variant="primary" href="/products">
+      <s-button slot="primary-action" variant="primary" onClick={() => router.push('/products')}>
         New generation
       </s-button>
 
