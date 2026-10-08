@@ -4,3 +4,4 @@ export * from './references';
 export * from './plan';
 export * from './config/generation-config';
 export * from './contracts';
+export * from './client-api';
