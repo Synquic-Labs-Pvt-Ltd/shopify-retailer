@@ -73,7 +73,11 @@ describe('live configuration (backend only)', () => {
 describe('embedded configuration (web app)', () => {
   it('is embedded and opens the web origin as the app URL', () => {
     expect(embedded).toMatch(/^embedded\s*=\s*true\s*$/m);
-    expect(value(embedded, 'application_url')).toBe('https://REPLACE_WITH_WEB_ORIGIN/');
+    const webUrl = new URL(value(embedded, 'application_url'));
+    expect(webUrl.protocol).toBe('https:');
+    expect(webUrl.pathname).toBe('/');
+    // A separate service from the backend: the web app is what Shopify frames, the backend is called from it.
+    expect(webUrl.host).not.toBe(new URL(value(live, 'application_url')).host);
   });
 
   it('sends the OAuth callback and the webhooks straight to the backend host of the live configuration', () => {
@@ -83,7 +87,7 @@ describe('embedded configuration (web app)', () => {
     expect(uris).toEqual([`https://${backendHost}/webhooks/shopify`, `https://${backendHost}/webhooks/shopify`]);
   });
 
-  it('has exactly one placeholder left: the web origin', () => {
-    expect([...new Set(embedded.match(/REPLACE_WITH_[A-Z_]+/g) ?? [])]).toEqual(['REPLACE_WITH_WEB_ORIGIN']);
+  it('has no placeholders left', () => {
+    expect(embedded).not.toMatch(/REPLACE_WITH/);
   });
 });

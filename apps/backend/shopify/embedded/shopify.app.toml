@@ -3,10 +3,9 @@
 # The live backend-only configuration is ../shopify.app.toml.
 # Validated against https://shopify.dev/docs/apps/build/cli-for-apps/app-configuration (October 2026).
 #
-# Before `shopify app deploy`, replace the one remaining placeholder:
-#   REPLACE_WITH_WEB_ORIGIN   the host of the deployed web app (apps/web), for example shopify-retailer-web.synquic.tech
-# The backend host (shopify-retailer.synquic.tech) is already filled in, and the webhook URLs point straight at it, so the
-# web app does not need to forward them.
+# Hosts: the web app (apps/web) is https://shopify-retailer-ui.synquic.tech and the backend is
+# https://shopify-retailer.synquic.tech. The webhook URLs and the OAuth redirect URL point straight at the backend, so the
+# web app does not need to forward them. Deploy from this folder: `shopify app deploy`.
 #
 # Keep in sync with the backend env:
 #   access_scopes.scopes   = SHOPIFY_SCOPES
@@ -28,7 +27,7 @@
 
 client_id = "a8fb46c0913fdaa1de8c7052c1bbbca5"
 name = "Retailer Studio"
-application_url = "https://REPLACE_WITH_WEB_ORIGIN/"
+application_url = "https://shopify-retailer-ui.synquic.tech/"
 embedded = true
 
 [access_scopes]
