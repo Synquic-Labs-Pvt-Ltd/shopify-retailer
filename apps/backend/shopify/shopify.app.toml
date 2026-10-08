@@ -3,20 +3,33 @@
 #
 # Before `shopify app deploy`, replace:
 #   REPLACE_WITH_CLIENT_ID          the Client ID from the Dev Dashboard
-#   REPLACE_WITH_PUBLIC_BASE_URL    the host of PUBLIC_BASE_URL (for example the cloudflared tunnel host)
+#   REPLACE_WITH_WEB_ORIGIN         the host of the embedded web app (apps/web), for example the cloudflared tunnel host
+#   REPLACE_WITH_PUBLIC_BASE_URL    the host of PUBLIC_BASE_URL (the backend). It may be the same host as the web origin
+#                                   when the web app fronts the backend.
 #
 # Keep in sync with the backend env:
 #   access_scopes.scopes   = SHOPIFY_SCOPES
 #   webhooks.api_version   = SHOPIFY_API_VERSION
 #   auth.redirect_urls     = PUBLIC_BASE_URL + /auth/shopify/callback
 #
+# Embedded app (embedded = true): Shopify opens application_url inside the Shopify admin (an iframe) and the web app
+# signs in with App Bridge session tokens. The backend accepts them as bearer tokens and trades one for an offline
+# access token (token exchange) the first time a shop shows up, so no redirect-based OAuth happens in the admin.
+# The mobile app does not change: it still logs in with the authorization code grant against the backend, which is
+# why auth.redirect_urls stays. Scopes use managed installation (no use_legacy_install_flow), so Shopify installs the
+# app and grants the scopes above when the merchant opens it.
+#
+# Webhook uri values below are relative, and Shopify resolves them against application_url. The web origin therefore
+# has to proxy /webhooks/shopify (raw body, headers untouched) to the backend. It also has to proxy /auth/shopify/*
+# when PUBLIC_BASE_URL is the web origin. Put an absolute backend URL in uri instead if the web origin cannot proxy.
+#
 # Distribution (public, unlisted) is chosen in the Dev Dashboard, not in this file.
 # The first `shopify app deploy` asks whether to include this configuration; answer "Yes, always".
 
 client_id = "REPLACE_WITH_CLIENT_ID"
 name = "Retailer Studio"
-application_url = "https://REPLACE_WITH_PUBLIC_BASE_URL/"
-embedded = false
+application_url = "https://REPLACE_WITH_WEB_ORIGIN/"
+embedded = true
 
 [access_scopes]
 scopes = "read_products,read_files,write_files"

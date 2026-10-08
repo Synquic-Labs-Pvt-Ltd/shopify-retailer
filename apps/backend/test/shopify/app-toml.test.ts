@@ -13,16 +13,28 @@ const list = (key: string): string[] =>
   [...(new RegExp(`^\\s*${key}\\s*=\\s*\\[([^\\]]*)\\]`, 'm').exec(toml)?.[1] ?? '').matchAll(/"([^"]*)"/g)].map((match) => match[1] ?? '');
 
 describe('shopify.app.toml', () => {
-  it('is a non-embedded app named Retailer Studio, without "Shopify" in the name', () => {
-    expect(toml).toMatch(/^embedded\s*=\s*false\s*$/m);
+  it('is an embedded app named Retailer Studio, without "Shopify" in the name', () => {
+    expect(toml).toMatch(/^embedded\s*=\s*true\s*$/m);
     expect(value('name')).toBe('Retailer Studio');
     expect(value('name').toLowerCase()).not.toContain('shopify');
   });
 
-  it('uses PUBLIC_BASE_URL + "/" as the app URL and the callback as the only redirect URL', () => {
-    expect(value('application_url')).toMatch(/^https:\/\/[^/]+\/$/);
-    const base = value('application_url').slice(0, -1);
-    expect(list('redirect_urls')).toEqual([`${base}/auth/shopify/callback`]);
+  it('opens the web origin as the app URL and keeps the backend callback as the only redirect URL', () => {
+    expect(value('application_url')).toBe('https://REPLACE_WITH_WEB_ORIGIN/');
+    // The mobile login still runs the authorization code grant against the backend (PUBLIC_BASE_URL).
+    const redirects = list('redirect_urls');
+    expect(redirects).toEqual(['https://REPLACE_WITH_PUBLIC_BASE_URL/auth/shopify/callback']);
+    expect(new URL(redirects[0] ?? '').pathname).toBe(new URL('/auth/shopify/callback', env.PUBLIC_BASE_URL).pathname);
+  });
+
+  it('keeps managed installation: no legacy install flow', () => {
+    expect(toml).not.toMatch(/^\s*use_legacy_install_flow\s*=/m);
+  });
+
+  it('documents why the web origin must proxy the Shopify routes', () => {
+    expect(toml).toMatch(/embedded = true/);
+    expect(toml).toMatch(/proxy \/webhooks\/shopify/);
+    expect(toml).toMatch(/\/auth\/shopify\/\*/);
   });
 
   it('requests the same scopes as the backend and pins the same API version', () => {
