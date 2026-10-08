@@ -8,11 +8,17 @@ export const metadata: Metadata = {
   description: 'AI lifestyle images and videos for your Shopify products.',
 };
 
-const apiKey = process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ?? '';
-const polarisUrl = process.env.NEXT_PUBLIC_POLARIS_URL ?? 'https://cdn.shopify.com/shopifycloud/polaris-1.js';
-const mock = process.env.NEXT_PUBLIC_MOCK === '1';
+// Rendered per request so the Shopify client id and the Polaris script URL come from the runtime environment
+// (one built image, any deployment). The client id is public: App Bridge needs it in the page.
+export const dynamic = 'force-dynamic';
+
+const DEFAULT_POLARIS_URL = 'https://cdn.shopify.com/shopifycloud/polaris-1.js';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const apiKey = process.env.SHOPIFY_API_KEY ?? process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ?? '';
+  const polarisUrl = process.env.POLARIS_URL ?? process.env.NEXT_PUBLIC_POLARIS_URL ?? DEFAULT_POLARIS_URL;
+  const mock = process.env.NEXT_PUBLIC_MOCK === '1';
+
   return (
     <html lang="en">
       <head>

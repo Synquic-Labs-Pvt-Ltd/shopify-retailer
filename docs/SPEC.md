@@ -1236,7 +1236,7 @@ A second client for the same backend: a Next.js app that opens inside the Shopif
 
 ### Authentication and API access
 - Every API call carries a fresh App Bridge session token (shopify.idToken) as a bearer token. There are no cookies, no login redirect and no refresh logic in the web app. The backend verifies the token (section 8.3, Embedded app).
-- The browser calls same-origin /api/v1/*. Next rewrites forward /api/v1, /auth/shopify/* and /webhooks/shopify to BACKEND_URL, so the web origin is the only public URL: application_url, the OAuth redirect URL and the webhook URLs all use it. No CORS is involved.
+- The browser calls same-origin /api/v1/*. proxy.ts forwards /api/v1, /auth/shopify/* and /webhooks/shopify to the backend. BACKEND_URL is read at request time, so one built image works for any deployment, and the body and headers (the webhook HMAC) pass through unchanged. The web origin can therefore be the only public URL, or the backend can keep its own domain for OAuth and webhooks. No CORS is involved. A missing or invalid BACKEND_URL answers 502 with the error envelope.
 - proxy.ts sets Content-Security-Policy frame-ancestors per request from the shop query parameter that the admin adds to the iframe URL (the shop host plus Shopify's admin hosts; a wildcard is not accepted by app review). The root path redirects to /generations and keeps the query string, which App Bridge needs.
 
 ### Mock mode
@@ -1248,14 +1248,14 @@ A second client for the same backend: a Next.js app that opens inside the Shopif
 - Downloads: a direct fetch of the CDN file to a blob when the CDN allows it, otherwise the /api/download route, which requires the session token (checked against the backend), allows only https hosts cdn.shopify.com and *.shopifycdn.com, never follows redirects, caps the size and streams with Content-Disposition attachment. If both fail the file opens in a new tab. Whether the admin iframe permits downloads is unverified.
 
 ### Environment (apps/web)
-- NEXT_PUBLIC_SHOPIFY_API_KEY: the Shopify client id (public).
-- BACKEND_URL: the backend base URL, server side only.
-- NEXT_PUBLIC_MOCK: 1 for mock mode, unset otherwise.
-- NEXT_PUBLIC_POLARIS_URL: the Polaris web components script URL.
+- SHOPIFY_API_KEY: the Shopify client id (public), read at runtime.
+- BACKEND_URL: the backend origin, server side only, read at runtime.
+- POLARIS_URL: the Polaris web components script URL, read at runtime (default polaris-1.js, the classic look).
+- NEXT_PUBLIC_MOCK: 1 for mock mode, unset otherwise. This one is inlined when the app is built.
 - The Shopify client secret stays in the backend.
 
 ### Deployment
-- The web app is a separate Node service (next build, next start; output standalone). Behind it the backend stays private except for the webhook and OAuth paths, which the web origin forwards. For development a tunnel to the web origin gives Shopify the public https address it needs (webhooks are called by Shopify's servers and the admin iframe will not load plain http).
+- The web app is a separate Node service. apps/web/Dockerfile builds the standalone output, works with either the repository root or apps/web as the build context (it clones the monorepo from GitHub in the second case), and has a health route at /api/health. The root layout is rendered per request so the client id and the Polaris URL come from the runtime environment. Behind it the backend stays private except for the webhook and OAuth paths, which the web origin forwards. For development a tunnel to the web origin gives Shopify the public https address it needs (webhooks are called by Shopify's servers and the admin iframe will not load plain http).
 - shopify.app.toml sets embedded = true and application_url to the web origin. Until the web app is deployed, the backend alone can be registered as a non-embedded app for the mobile app (docs/DEPLOY.md).
 
 ### Unverified

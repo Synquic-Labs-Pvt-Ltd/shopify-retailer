@@ -80,9 +80,39 @@ Then copy the Client ID into SHOPIFY_API_KEY and the Client secret into SHOPIFY_
 2. Build the mobile app with `EXPO_PUBLIC_API_MOCK=false` and `EXPO_PUBLIC_API_BASE_URL=https://YOUR-BACKEND-HOST` (both are inlined at build time), install it, log in with the store domain.
 3. Start with one or two products. Each product costs one planner call, two image calls and one Veo video. Quotas are in `lanes` in the generation config.
 
-## 6. When the embedded web app is deployed
+## 6. Deploy the embedded web app
 
-Deploy apps/web as its own service (Next.js, `pnpm -F @rs/web build` then `pnpm -F @rs/web start`, environment in `apps/web/.env.example`: NEXT_PUBLIC_SHOPIFY_API_KEY, BACKEND_URL, NEXT_PUBLIC_MOCK unset). Then change the Shopify app: App URL = the web origin, Embedded = on, and keep the redirect URL and webhook URLs working through the web origin (the web app forwards /auth/shopify/* and /webhooks/shopify to the backend). `apps/backend/shopify/shopify.app.toml` has the matching configuration for the Shopify CLI.
+The web app (apps/web, Next.js) is a second service. It is what opens inside the Shopify admin, so it needs its own public https address. The backend from the earlier steps keeps running and stays the only service that talks to Shopify's API, Google and MongoDB.
+
+| Setting | Value |
+|---|---|
+| Runtime | Docker, `apps/web/Dockerfile` (root directory `apps/web`), or the repository root with `-f apps/web/Dockerfile` |
+| Port | 3000 (the image sets PORT and HOSTNAME itself) |
+| Health check path | `/api/health` |
+| Memory | At least 512 MB |
+
+Environment variables of the web service. All of them are read at runtime, so the image holds no deployment settings:
+
+| Variable | Value | Notes |
+|---|---|---|
+| SHOPIFY_API_KEY | Client ID of the Shopify app | Public. App Bridge needs it in the page |
+| BACKEND_URL | The backend origin, for example https://shopify-retailer.synquic.tech | Server side only. Use an internal address if both services share a network |
+| POLARIS_URL | optional | Defaults to the classic admin look (polaris-1.js). polaris-2.0-rc.js is the new look |
+
+Never set NEXT_PUBLIC_MOCK on a real deployment. The Shopify client secret stays in the backend and is never given to the web service.
+
+Then change the Shopify app (the backend keeps its own domain, so OAuth and webhooks still go straight to it):
+
+| Field | Value |
+|---|---|
+| App URL | https://YOUR-WEB-HOST/ |
+| Embedded in admin | On |
+| Allowed redirection URL | https://YOUR-BACKEND-HOST/auth/shopify/callback (unchanged) |
+| Webhook URLs | https://YOUR-BACKEND-HOST/webhooks/shopify (unchanged) |
+
+With a single public address instead, the web service also forwards `/auth/shopify/*` and `/webhooks/shopify` to the backend (the raw body and the HMAC header pass through unchanged). In that case set the backend's PUBLIC_BASE_URL to the web address and use that address in all Shopify URLs. `apps/backend/shopify/shopify.app.toml` holds the matching configuration for the Shopify CLI.
+
+The merchant opens the app from the Apps menu of their Shopify admin. Browsing the web address directly in a tab shows the pages but cannot sign in, because there is no App Bridge outside the admin.
 
 ## 7. Security notes
 

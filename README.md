@@ -10,6 +10,8 @@ The single source of truth is [docs/SPEC.md](docs/SPEC.md). If code and spec dis
 |---|---|
 | `apps/backend` (`@rs/backend`) | Node 22, Express 5, Mongoose modular monolith. Role `api`, `worker` or `all` via `ROLE`. |
 | `apps/mobile` (`@rs/mobile`) | Expo SDK 57 dev-build app (React Navigation 7, TanStack Query 5, zustand 5). |
+| `apps/web` (`@rs/web`) | Next.js 16 app that runs inside the Shopify admin (Polaris web components, App Bridge session tokens). |
+| `packages/mock-api` (`@rs/mock-api`) | In-memory API fixtures shared by the mobile mock mode and the web mock mode. |
 | `packages/shared` (`@rs/shared`) | Enums, zod contracts, generation config schema, creative plan schema. Consumed as TypeScript source (no build step) by the backend, Metro, vitest and tsx. Frozen after Phase 0. |
 | `docs/SPEC.md` | The specification. |
 
@@ -65,7 +67,19 @@ pnpm -F @rs/mobile dev         # expo start --dev-client (after a dev build is i
 pnpm -F @rs/mobile android     # expo run:android (generates android/, needs the Android SDK)
 ```
 
-With `EXPO_PUBLIC_API_MOCK=true` the app serves in-memory fixtures (`src/api/mock/`) and needs no backend: log in with the prefilled `mock-store` domain and the whole create-batch flow works. For the real backend set `EXPO_PUBLIC_API_MOCK=false` and `EXPO_PUBLIC_API_BASE_URL` (Android emulator: `http://10.0.2.2:3000`; a physical device needs the public tunnel URL or your LAN IP). Both values are inlined into the JS bundle at build time.
+With `EXPO_PUBLIC_API_MOCK=true` the app serves the in-memory fixtures of `@rs/mock-api` and needs no backend: log in with the prefilled `mock-store` domain and the whole create-batch flow works. For the real backend set `EXPO_PUBLIC_API_MOCK=false` and `EXPO_PUBLIC_API_BASE_URL` (Android emulator: `http://10.0.2.2:3000`; a physical device needs the public tunnel URL or your LAN IP). Both values are inlined into the JS bundle at build time.
+
+### Web (embedded in the Shopify admin)
+
+`apps/web` is a Next.js app that opens inside the Shopify admin and looks like it, using Polaris web components. See SPEC section 27.
+
+```sh
+# Mock mode: no Shopify, no backend. NEXT_PUBLIC_MOCK is read when the app is built.
+NEXT_PUBLIC_MOCK=1 pnpm -F @rs/web build && pnpm -F @rs/web start    # http://localhost:3000, shows a plain development frame
+pnpm -F @rs/web e2e                                                   # Playwright smoke test of the whole flow in mock mode (Edge, needs internet for the Polaris scripts)
+```
+
+For a real deployment the settings are runtime environment variables (`SHOPIFY_API_KEY`, `BACKEND_URL`, optional `POLARIS_URL`, see `apps/web/.env.example`), so one Docker image (`apps/web/Dockerfile`) serves any environment. docs/DEPLOY.md has the host settings for both services.
 
 ## Real end-to-end run (SPEC 22, Phase 3)
 
