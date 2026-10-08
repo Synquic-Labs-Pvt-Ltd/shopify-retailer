@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { EXCHANGE_GRANT, checkExchangeRequest } from '../helpers/session-token';
 
 // An in-memory Shopify for tests: the OAuth authorize/token endpoints and the Admin GraphQL shop query,
 // all served through an injected fetch.
@@ -35,8 +36,23 @@ export interface ApproveOptions {
   extra?: Record<string, string>;
 }
 
+// Knobs of the token exchange grant (App Bridge session token for an offline token).
+export interface ExchangeKnobs {
+  // Shops where the app is not installed: the exchange answers 400.
+  refuse: Set<string>;
+  // Answer every exchange with this HTTP status (for example 503) instead of looking at the request.
+  forceStatus: number | null;
+  // Time the token endpoint takes to answer an exchange, to make concurrent requests overlap.
+  delayMs: number;
+  // Scopes reported by the exchange response.
+  scope: string;
+}
+
 export interface FakeShopify {
   fetchImpl: typeof fetch;
+  exchange: ExchangeKnobs;
+  // The recorded token-exchange requests.
+  exchangeCalls(): RecordedCall[];
   calls: RecordedCall[];
   shopInfo: { id: string; name: string; email: string; currencyCode: string; ianaTimezone: string };
   failShopQuery: boolean;
@@ -73,7 +89,7 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-export function createFakeShopify(options: { apiKey: string; apiSecret: string; apiVersion: string }): FakeShopify {
+export function createFakeShopify(options: { apiKey: string; apiSecret: string; apiVersion: string; now?: () => Date }): FakeShopify {
   const calls: RecordedCall[] = [];
   const pending = new Map<string, PendingGrant>();
   const refreshTokens = new Map<string, string>();
@@ -84,6 +100,8 @@ export function createFakeShopify(options: { apiKey: string; apiSecret: string; 
     calls,
     shopInfo: { id: 'gid://shopify/Shop/1001', name: 'Demo Store', email: 'owner@demo.example', currencyCode: 'INR', ianaTimezone: 'Asia/Kolkata' },
     failShopQuery: false,
+    exchange: { refuse: new Set(), forceStatus: null, delayMs: 0, scope: 'read_products,read_files,write_files' },
+    exchangeCalls: () => calls.filter((call) => call.form?.grant_type === EXCHANGE_GRANT),
     latestRefreshToken: (shop) => refreshTokens.get(shop),
 
     approve(authorizeUrl, approveOptions = {}) {
@@ -114,7 +132,7 @@ export function createFakeShopify(options: { apiKey: string; apiSecret: string; 
       const form = body instanceof URLSearchParams ? Object.fromEntries(body.entries()) : null;
       calls.push({ url: url.href, method: init?.method ?? 'GET', form, headers });
 
-      if (url.pathname === '/admin/oauth/access_token') return Promise.resolve(tokenEndpoint(url.hostname, form ?? {}));
+      if (url.pathname === '/admin/oauth/access_token') return tokenEndpoint(url.hostname, form ?? {});
       if (url.pathname === `/admin/api/${options.apiVersion}/graphql.json`) {
         return Promise.resolve(graphql(headers['x-shopify-access-token']));
       }
@@ -122,7 +140,17 @@ export function createFakeShopify(options: { apiKey: string; apiSecret: string; 
     },
   };
 
-  function tokenEndpoint(shop: string, form: Record<string, string>): Response {
+  async function tokenExchange(shop: string, form: Record<string, string>): Promise<Response> {
+    if (fake.exchange.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, fake.exchange.delayMs));
+    if (fake.exchange.forceStatus !== null) return json(fake.exchange.forceStatus, { error: 'forced' });
+    if (fake.exchange.refuse.has(shop)) return json(400, { error: 'invalid_request', error_description: 'The app is not installed on this shop' });
+    const problem = await checkExchangeRequest(form, { shop, apiKey: options.apiKey, apiSecret: options.apiSecret, now: options.now });
+    if (problem !== null) return json(400, { error: 'invalid_request', error_description: problem });
+    return json(200, issueOffline(shop, fake.exchange.scope));
+  }
+
+  async function tokenEndpoint(shop: string, form: Record<string, string>): Promise<Response> {
+    if (form.grant_type === EXCHANGE_GRANT) return tokenExchange(shop, form);
     if (form.client_id !== options.apiKey || form.client_secret !== options.apiSecret) {
       return json(400, { error: 'invalid_client' });
     }

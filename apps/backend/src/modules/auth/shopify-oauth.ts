@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AppError } from '../../core/errors';
 import type { Logger } from '../../core/logger';
-import type { ShopInfo } from '../shops';
+import { fetchShopInfo, type ShopInfo } from '../shops';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -41,20 +41,6 @@ export interface ShopifyOAuthDeps {
   apiVersion: string;
 }
 
-const shopQueryResponseSchema = z.object({
-  data: z.object({
-    shop: z.object({
-      id: z.string(),
-      name: z.string().nullish(),
-      email: z.string().nullish(),
-      currencyCode: z.string().nullish(),
-      ianaTimezone: z.string().nullish(),
-    }),
-  }),
-});
-
-const SHOP_QUERY = '{ shop { id name email currencyCode ianaTimezone } }';
-
 export function createShopifyOAuthClient(deps: ShopifyOAuthDeps): ShopifyOAuthClient {
   const { fetchImpl, logger } = deps;
 
@@ -91,31 +77,7 @@ export function createShopifyOAuthClient(deps: ShopifyOAuthDeps): ShopifyOAuthCl
       return parsed.data;
     },
 
-    async fetchShopInfo(shopDomain, accessToken) {
-      try {
-        const response = await fetchImpl(`https://${shopDomain}/admin/api/${deps.apiVersion}/graphql.json`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            accept: 'application/json',
-            'x-shopify-access-token': accessToken,
-          },
-          body: JSON.stringify({ query: SHOP_QUERY }),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const { shop } = shopQueryResponseSchema.parse(await response.json()).data;
-        return {
-          shopGid: shop.id,
-          name: shop.name ?? null,
-          email: shop.email ?? null,
-          currencyCode: shop.currencyCode ?? null,
-          ianaTimezone: shop.ianaTimezone ?? null,
-        };
-      } catch (err) {
-        logger.warn({ err, shopDomain }, 'could not fetch shop info after install');
-        return null;
-      }
-    },
+    fetchShopInfo: (shopDomain, accessToken) =>
+      fetchShopInfo({ fetchImpl, logger, apiVersion: deps.apiVersion }, shopDomain, accessToken),
   };
 }

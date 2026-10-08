@@ -1,8 +1,11 @@
+import { isValidShopDomain } from '@rs/shared';
 import { AppError } from '../../core/errors';
 import { createSecretBox } from './crypto';
 import { ShopModel, type ShopDoc } from './model';
 import { requestTokenRefresh, type RefreshedTokens } from './refresh';
 import { parseScopes } from './scopes';
+import { fetchShopInfo } from './shop-info';
+import { requestSessionTokenExchange } from './token-exchange';
 import type { OAuthTokenGrant, ShopInfo, ShopRecord, ShopsDeps, ShopsInternalService } from './index';
 
 const REFRESH_MARGIN_MS = 5 * 60_000;
@@ -26,6 +29,10 @@ function toRecord(doc: ShopDoc): ShopRecord {
     status: doc.status,
     scopes: doc.scopes,
   };
+}
+
+function isDuplicateKey(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === 11000;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -54,6 +61,13 @@ export function createShopsService(deps: ShopsDeps): ShopsInternalService {
     if (!token?.refreshTokenEnc) return true;
     const expiresAt = token.refreshTokenExpiresAt;
     return expiresAt !== null && expiresAt !== undefined && expiresAt.getTime() <= now().getTime();
+  };
+
+  // A token the shop can work with right now: an access token that is good, or one that the refresh token can renew.
+  // Whether it is still accepted by Shopify only shows when it is used (a 401 turns the shop into reauth_required).
+  const hasUsableToken = (doc: ShopDoc): boolean => {
+    if (doc.status !== 'active' || !doc.offlineToken?.accessTokenEnc) return false;
+    return !needsRefresh(doc) || !refreshTokenDead(doc);
   };
 
   const findById = async (shopId: string): Promise<ShopDoc | null> =>
@@ -151,7 +165,107 @@ export function createShopsService(deps: ShopsDeps): ShopsInternalService {
     });
   };
 
-  return {
+  // Session token exchange. The per-shop lock is the refreshLockUntil field of the refresh path, so an exchange and
+  // a refresh of the same shop never run together. A shop we have never seen has no document to lock, so the claim
+  // creates a bare placeholder (status uninstalled, no installedAt), which the failure path removes again.
+  const claimExchangeLock = async (shopDomain: string, lockUntil: Date): Promise<ShopDoc | null> => {
+    try {
+      return await ShopModel.findOneAndUpdate(
+        {
+          shopDomain,
+          $or: [{ 'offlineToken.refreshLockUntil': null }, { 'offlineToken.refreshLockUntil': { $lte: now() } }],
+        },
+        { $set: { 'offlineToken.refreshLockUntil': lockUntil }, $setOnInsert: { status: 'uninstalled', scopes: [] } },
+        { upsert: true, returnDocument: 'after' },
+      ).lean<ShopDoc>();
+    } catch (err) {
+      // The document exists and another exchange or refresh holds its lock (or has just created it).
+      if (isDuplicateKey(err)) return null;
+      throw err;
+    }
+  };
+
+  const releaseExchangeLock = async (shopDomain: string, lockUntil: Date): Promise<void> => {
+    await ShopModel.updateOne({ shopDomain, 'offlineToken.refreshLockUntil': lockUntil }, { $set: { 'offlineToken.refreshLockUntil': null } });
+  };
+
+  // The exchange failed: drop the placeholder we may have created, or just free the lock of a real shop.
+  const abandonExchange = async (shopDomain: string, lockUntil: Date): Promise<void> => {
+    await ShopModel.deleteOne({
+      shopDomain,
+      status: 'uninstalled',
+      installedAt: { $exists: false },
+      'offlineToken.accessTokenEnc': { $exists: false },
+      'offlineToken.refreshLockUntil': lockUntil,
+    });
+    await releaseExchangeLock(shopDomain, lockUntil);
+  };
+
+  // Called with the exchange lock held. Always leaves the lock released.
+  const exchangeWithLock = async (claimed: ShopDoc, idToken: string, lockUntil: Date): Promise<ShopRecord> => {
+    const shopDomain = claimed.shopDomain;
+    // Another instance may have finished its exchange between our read and our lock claim.
+    if (hasUsableToken(claimed)) {
+      await releaseExchangeLock(shopDomain, lockUntil);
+      return toRecord(claimed);
+    }
+
+    try {
+      const outcome = await requestSessionTokenExchange({
+        fetchImpl,
+        logger,
+        shopDomain,
+        clientId: env.SHOPIFY_API_KEY,
+        clientSecret: env.SHOPIFY_API_SECRET,
+        idToken,
+      });
+
+      if (outcome.kind === 'refused') {
+        throw AppError.shopReauthRequired('Shopify did not accept the session token for this shop');
+      }
+      if (outcome.kind !== 'exchanged') {
+        const reason = outcome.kind === 'transient' ? outcome.reason : `HTTP ${outcome.status}`;
+        throw new AppError('internal', 'Could not exchange the Shopify session token', {
+          status: 502,
+          details: { upstream: 'shopify', reason },
+        });
+      }
+
+      // upsertFromOAuth replaces the token block, which also clears the lock.
+      let shop = await service.upsertFromOAuth(outcome.grant);
+      const info = await fetchShopInfo({ fetchImpl, logger, apiVersion: env.SHOPIFY_API_VERSION }, shopDomain, outcome.grant.accessToken);
+      if (info !== null) shop = (await service.saveShopInfo(shop.id, info)) ?? shop;
+      logger.info({ shopId: shop.id, shopDomain }, 'shop authorized through a session token exchange');
+      return shop;
+    } catch (err) {
+      await abandonExchange(shopDomain, lockUntil).catch((cleanupErr: unknown) => {
+        logger.error({ err: cleanupErr, shopDomain }, 'could not release the token exchange lock');
+      });
+      throw err;
+    }
+  };
+
+  const runExchange = async (shopDomain: string, idToken: string): Promise<ShopRecord> => {
+    for (let attempt = 0; attempt < maxWaitLoops; attempt++) {
+      const current = await ShopModel.findOne({ shopDomain }).lean<ShopDoc>();
+      if (current !== null && hasUsableToken(current)) return toRecord(current);
+
+      const lockUntil = new Date(now().getTime() + lockMs);
+      const claimed = await claimExchangeLock(shopDomain, lockUntil);
+      if (claimed === null) {
+        await sleep(pollMs);
+        continue;
+      }
+      return exchangeWithLock(claimed, idToken, lockUntil);
+    }
+    throw AppError.internal('Timed out waiting for the Shopify token exchange');
+  };
+
+  // In-process single flight per shop: concurrent requests (each carries its own short-lived session token)
+  // share the one exchange that is already running.
+  const exchanges = new Map<string, Promise<ShopRecord>>();
+
+  const service: ShopsInternalService = {
     async getById(shopId) {
       const doc = await findById(shopId);
       return doc === null ? null : toRecord(doc);
@@ -260,5 +374,20 @@ export function createShopsService(deps: ShopsDeps): ShopsInternalService {
       if (!OBJECT_ID.test(shopId)) return;
       await ShopModel.deleteOne({ _id: shopId });
     },
+
+    async ensureOfflineToken(shopDomain, idToken) {
+      const domain = shopDomain.toLowerCase();
+      if (!isValidShopDomain(domain)) throw AppError.unauthorized('Invalid shop domain');
+
+      const doc = await ShopModel.findOne({ shopDomain: domain }).lean<ShopDoc>();
+      if (doc !== null && hasUsableToken(doc)) return toRecord(doc);
+
+      const running = exchanges.get(domain);
+      if (running !== undefined) return running;
+      const started = runExchange(domain, idToken).finally(() => exchanges.delete(domain));
+      exchanges.set(domain, started);
+      return started;
+    },
   };
+  return service;
 }
