@@ -167,9 +167,9 @@ describe('Shopify Admin API failures', () => {
 
 describe('per-user rate limit (SPEC 18)', () => {
   it('allows 300 API requests a minute per user, /me included, and counts each user on their own', async () => {
-    // A fresh session starts with an empty budget. Access tokens carry no random id, so wait for a new second.
-    await sleep(1100);
-    const token = (await login(e2e, SHOP)).session.accessToken;
+    // A user of their own, so the requests made above by the main client do not count against this budget.
+    const budgeted = await login(e2e, SHOP, { user: { id: 777_001, email: 'budget@example.com' } });
+    const token = budgeted.session.accessToken;
     const statuses = new Set<number>();
     for (let count = 0; count < 300; count += 1) {
       statuses.add((await request(e2e.app).get('/api/v1/me').set('authorization', `Bearer ${token}`)).status);
@@ -181,7 +181,14 @@ describe('per-user rate limit (SPEC 18)', () => {
     expect(errorOf(limited).code).toBe('too_many_requests');
     expect((await request(e2e.app).get('/api/v1/products').set('authorization', `Bearer ${token}`)).status).toBe(429);
 
-    // Another user is not affected.
+    // The budget belongs to the user, not to the token: logging in again does not refill it.
+    await sleep(1100);
+    const again = await login(e2e, SHOP, { user: { id: 777_001, email: 'budget@example.com' } });
+    expect(again.session.accessToken).not.toBe(token);
+    expect((await request(e2e.app).get('/api/v1/me').set('authorization', `Bearer ${again.session.accessToken}`)).status).toBe(429);
+
+    // Another user, of the same shop or of another one, is not affected.
+    expect((await client.get('/api/v1/products?limit=1')).status).toBe(200);
     expect((await quiet.get('/api/v1/products?limit=1')).status).toBe(200);
     expect((await withNewIp(request(e2e.app).get('/health'))).status).toBe(200);
   });

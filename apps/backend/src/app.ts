@@ -34,7 +34,7 @@ export function createApp(deps: AppDeps): Express {
   // GET /, /auth/shopify/start, /auth/shopify/callback
   app.use(container.auth.browserRouter);
   // GET /me is an API route that the auth module serves, so it has to pass the same per-user limit (SPEC 18).
-  const apiLimiter = createApiLimiter();
+  const apiLimiter = createApiLimiter(container.auth.service.rateLimitKey);
   app.use('/api/v1/me', apiLimiter);
   // POST /auth/exchange|refresh|logout and GET /me
   app.use('/api/v1', container.auth.apiRouter);
