@@ -83,7 +83,7 @@ async function runPlan(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise
 
   const counts = planCounts(ctx.config);
   const template = rt.getPrompt('planner.system');
-  const systemPrompt = renderPlannerSystemPrompt(template.text, counts, config);
+  const systemPrompt = renderPlannerSystemPrompt(template.text, counts, config, ctx.styleMode);
   const audit = { promptVersion: template.version, renderedPrompt: systemPrompt };
   const provider = rt.ai.getProvider(ctx.config.provider);
 

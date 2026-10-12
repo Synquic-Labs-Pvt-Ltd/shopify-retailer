@@ -164,6 +164,7 @@ function toItemDoc(
     ownReferenceMediaIds: ids(product.own),
     effectiveReferenceMediaIds: ids(product.effective),
     referenceMode: product.mode,
+    styleMode: product.styleMode,
     status: 'pending',
     creativePlan: null,
     outputMediaIds: [],

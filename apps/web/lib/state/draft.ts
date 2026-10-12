@@ -1,14 +1,24 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { allDraftRefs, emptyDraft, findRef, partializeDraft, refsOf, restoreDraft, withRefs } from './draftData';
+import {
+  allDraftRefs,
+  emptyDraft,
+  findRef,
+  keptStyleModes,
+  partializeDraft,
+  refsOf,
+  restoreDraft,
+  withRefs,
+} from './draftData';
 import { browserDraftStorage, guardStorage, type SyncStorage } from './draftStorage';
 import type { DraftData, DraftReference, DraftState } from './draftTypes';
 import { fileRegistry, type FileRegistry } from './fileRegistry';
 import { clampSelection, toggleSelection } from './selection';
 
 export const DRAFT_STORAGE_KEY = 'rs-draft';
-export const DRAFT_VERSION = 1;
+// v2 added the batch-level styleMode and per-product overrides (see migrate below).
+export const DRAFT_VERSION = 2;
 
 export interface DraftStoreOptions {
   // Defaults to localStorage (a no-op on the server). Tests pass an in-memory storage.
@@ -43,17 +53,37 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
 
         toggleProduct: (product, maxProducts) => {
           const { products, result } = toggleSelection(get().products, product, maxProducts);
-          if (result !== 'limit') set({ products });
+          if (result === 'removed') {
+            set({ products, productStyleModes: keptStyleModes(get().productStyleModes, products.map((p) => p.id)) });
+          } else if (result === 'added') {
+            set({ products });
+          }
           return result;
         },
 
         setProducts: (products, maxProducts) => {
           const clamped = clampSelection(products, maxProducts);
-          set({ products: clamped.products });
+          set({
+            products: clamped.products,
+            productStyleModes: keptStyleModes(get().productStyleModes, clamped.products.map((p) => p.id)),
+          });
           return clamped.dropped;
         },
 
-        clearSelection: () => set({ products: [] }),
+        clearSelection: () => set({ products: [], productStyleModes: {} }),
+
+        setStyleMode: (mode) => set({ styleMode: mode }),
+
+        setProductStyleMode: (productId, mode) => {
+          const current = get().productStyleModes;
+          if (mode === null) {
+            if (!(productId in current)) return;
+            set({ productStyleModes: keptStyleModes(current, Object.keys(current).filter((id) => id !== productId)) });
+            return;
+          }
+          if (current[productId] === mode) return;
+          set({ productStyleModes: { ...current, [productId]: mode } });
+        },
 
         addRef: (target, ref) => {
           const state = get();
@@ -112,8 +142,14 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
         skipHydration: true,
         partialize: partializeDraft,
         merge: restoreDraft,
-        // A draft of another version is discarded rather than guessed at.
-        migrate: () => emptyDraft(),
+        migrate: (persisted, version) => {
+          // A v1 draft has no aesthetic yet: default it to 'apparel' with no per-product overrides, keeping
+          // its products and references. Anything older or unknown is discarded rather than guessed at.
+          if (version === 1 && persisted !== null && typeof persisted === 'object') {
+            return { ...emptyDraft(), ...(persisted as Partial<DraftData>), styleMode: 'apparel', productStyleModes: {} };
+          }
+          return emptyDraft();
+        },
       },
     ),
   );

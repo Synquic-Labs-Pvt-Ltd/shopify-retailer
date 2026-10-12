@@ -123,6 +123,7 @@ export function createQueries(deps: QueryDeps) {
       imageUrl: item.productSnapshot.featuredImageUrl ?? item.productSnapshot.imageUrls[0] ?? null,
       status: item.status,
       referenceMode: item.referenceMode,
+      styleMode: item.styleMode ?? 'reference',
       outputs: item.outputMediaIds.flatMap((id) => {
         const object = objectById.get(id.toHexString());
         return object === undefined ? [] : [object];

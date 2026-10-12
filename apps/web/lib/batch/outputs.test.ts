@@ -40,6 +40,7 @@ function item(outputs: MediaObject[], jobs: BatchJobView[]): BatchItemView {
     imageUrl: null,
     status: 'generating',
     referenceMode: 'common_only',
+    styleMode: 'reference',
     outputs,
     jobs,
   };

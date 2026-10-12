@@ -8,6 +8,7 @@ import {
   type BatchStatus,
   type BatchSummary,
   type JobType,
+  type StyleMode,
 } from '@rs/shared';
 import { plural } from '@/lib/batch/format';
 import { usableOutputs, type ResultTileModel, type UsableOutput } from '@/lib/batch/outputs';
@@ -86,6 +87,13 @@ export const outputsTotal = (batch: Pick<BatchSummary, 'configSnapshot' | 'count
 function failedShotCount(item: BatchItemView): number {
   return item.jobs.filter((job) => job.type !== 'plan' && job.status === 'failed').length;
 }
+
+// The aesthetic a generated item used, for a small badge next to its title.
+export const STYLE_MODE_RESULT_LABELS: Record<StyleMode, string> = {
+  reference: 'References',
+  apparel: 'From the apparel',
+  studio: 'Studio',
+};
 
 // "2 of 3 ready", "1 of 3 ready, 1 failed".
 export function itemSummaryText(item: BatchItemView, expected: number): string {

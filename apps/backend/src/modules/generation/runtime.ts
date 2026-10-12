@@ -154,7 +154,7 @@ export async function loadImages(rt: Runtime, sources: readonly MediaSource[], s
 // First write wins, so a plan another job stored meanwhile is the one returned.
 export async function ensurePlan(rt: Runtime, run: JobRun): Promise<CreativePlan> {
   if (run.ctx.creativePlan !== null) return run.ctx.creativePlan;
-  const fallback = buildFallbackPlan(run.ctx.productSnapshot, planCounts(run.ctx.config), run.config);
+  const fallback = buildFallbackPlan(run.ctx.productSnapshot, planCounts(run.ctx.config), run.config, run.ctx.styleMode);
   const stored = await rt.batches.setCreativePlan(run.ctx.shopId, run.ctx.itemId, fallback, 'fallback');
   return stored.plan;
 }

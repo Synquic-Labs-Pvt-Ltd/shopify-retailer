@@ -4,6 +4,7 @@ import type {
   ImageShot,
   PlanCounts,
   ProductSnapshot,
+  StyleMode,
   VideoShot,
 } from '@rs/shared';
 import type { AiPart } from './index';
@@ -33,12 +34,29 @@ export type ReferenceVideoInput =
   | { mimeType: string; uri: string }
   | { mimeType: string; data: Uint8Array };
 
-export function renderPlannerSystemPrompt(template: string, counts: PlanCounts, config: GenerationConfig): string {
+// The STYLE DIRECTION paragraph the planner reads, by aesthetic source (SPEC 9). References, when the merchant
+// adds them, refine the result in every mode.
+export const STYLE_GUIDANCE: Record<StyleMode, string> = {
+  reference:
+    'STYLE DIRECTION: Build the world (setting, environment, lighting, color grading, mood and composition) primarily from the STYLE REFERENCES the merchant provided. If none are provided, infer a fitting, premium, natural setting from the product category and data.',
+  apparel:
+    'STYLE DIRECTION: There are no required references. Derive the whole world from the apparel itself — its design, fabric, cut, era, colors and the kind of customer who wears it. Choose a real, believable lifestyle location where this exact piece would be worn, a palette and light that flatter it, and props that fit its story. Vary the locations across the shots while keeping one coherent aesthetic. If STYLE REFERENCES are also provided, let them refine this direction.',
+  studio:
+    'STYLE DIRECTION: Shoot in a professional photo studio. Use a clean seamless solid-color backdrop in a shade that flatters the garment, soft even studio lighting (a large soft key with gentle fill, soft natural shadows), and no outdoor or room scenery and no props beyond a simple stool, plinth or hanger when useful. Aim for a premium, modern e-commerce and editorial studio look. Vary the camera angle and crop across the shots. If STYLE REFERENCES are also provided, let them refine the backdrop color, lighting and mood.',
+};
+
+export function renderPlannerSystemPrompt(
+  template: string,
+  counts: PlanCounts,
+  config: GenerationConfig,
+  styleMode: StyleMode = 'reference',
+): string {
   return renderPrompt(template, {
     imageCount: String(counts.imageCount),
     videoCount: String(counts.videoCount),
     videoDurationSeconds: String(config.video.durationSeconds),
     videoAspectRatio: config.video.aspectRatio,
+    styleGuidance: STYLE_GUIDANCE[styleMode],
   });
 }
 
@@ -200,9 +218,26 @@ const IMAGE_FRAMINGS = [
 
 const VIDEO_MOVES = ['slow push-in toward the product', 'gentle orbit around the product'] as const;
 
-const FALLBACK_SETTING = 'a bright, minimal, premium lifestyle setting that suits the product';
 const FALLBACK_LOOK = 'soft natural window light, shallow depth of field';
-const FALLBACK_BACKDROP = 'clean uncluttered background, warm neutral palette';
+
+// Deterministic fallback look per aesthetic source (SPEC 9), used when the planner call fails.
+const FALLBACK_STYLE: Record<StyleMode, { setting: string; backdrop: string; palette: string }> = {
+  reference: {
+    setting: 'a bright, minimal, premium lifestyle setting that suits the product',
+    backdrop: 'clean uncluttered background, warm neutral palette',
+    palette: 'warm neutral',
+  },
+  apparel: {
+    setting: 'a real lifestyle setting that suits the product and the customer who wears it',
+    backdrop: 'an uncluttered, on-brand background that flatters the product',
+    palette: 'a palette drawn from the product',
+  },
+  studio: {
+    setting: 'a professional photo studio with a clean seamless backdrop',
+    backdrop: 'a seamless solid-color studio backdrop in a shade that flatters the product',
+    palette: 'a clean studio palette that flatters the product',
+  },
+};
 
 function productPhrase(snapshot: ProductSnapshot): string {
   const kind = snapshot.productType.trim();
@@ -226,8 +261,16 @@ function uniqueAttributes(snapshot: ProductSnapshot): string[] {
 }
 
 // config is part of the agreed signature; the fallback wording does not depend on it yet.
-export function buildFallbackPlan(snapshot: ProductSnapshot, counts: PlanCounts, _config: GenerationConfig): CreativePlan {
+export function buildFallbackPlan(
+  snapshot: ProductSnapshot,
+  counts: PlanCounts,
+  _config: GenerationConfig,
+  styleMode: StyleMode = 'reference',
+): CreativePlan {
   const phrase = productPhrase(snapshot);
+  const style = FALLBACK_STYLE[styleMode];
+  const FALLBACK_SETTING = style.setting;
+  const FALLBACK_BACKDROP = style.backdrop;
 
   const imageShots: ImageShot[] = Array.from({ length: counts.imageCount }, (_unused, index) => {
     const framing = IMAGE_FRAMINGS[index % IMAGE_FRAMINGS.length] ?? IMAGE_FRAMINGS[0];
@@ -272,7 +315,7 @@ export function buildFallbackPlan(snapshot: ProductSnapshot, counts: PlanCounts,
     referenceStyle: {
       setting: FALLBACK_SETTING,
       lighting: 'soft natural window light',
-      palette: 'warm neutral',
+      palette: style.palette,
       mood: 'calm, premium and aspirational',
       composition: 'product as the hero on a clean, uncluttered background',
       motion: 'slow push-in toward the product',

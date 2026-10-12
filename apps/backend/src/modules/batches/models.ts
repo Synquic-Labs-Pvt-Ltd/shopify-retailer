@@ -4,6 +4,7 @@ import {
   ITEM_STATUSES,
   PLAN_SOURCES,
   REFERENCE_MODES,
+  STYLE_MODES,
   type BatchConfigSnapshot,
   type BatchCounts,
   type BatchStatus,
@@ -12,6 +13,7 @@ import {
   type PlanSource,
   type ProductSnapshot,
   type ReferenceMode,
+  type StyleMode,
 } from '@rs/shared';
 
 // SPEC 14.7. Extras: coverImageUrl (the first product's image, saved at creation so lists need no join) and
@@ -52,6 +54,7 @@ export interface BatchItemDoc {
   ownReferenceMediaIds: Types.ObjectId[];
   effectiveReferenceMediaIds: Types.ObjectId[];
   referenceMode: ReferenceMode;
+  styleMode: StyleMode;
   status: ItemStatus;
   creativePlan?: CreativePlan | null;
   planSource?: PlanSource | null;
@@ -106,6 +109,7 @@ const itemSchema = new Schema<BatchItemDoc>(
     ownReferenceMediaIds: { type: [objectId], default: [] },
     effectiveReferenceMediaIds: { type: [objectId], default: [] },
     referenceMode: { type: String, enum: REFERENCE_MODES, required: true },
+    styleMode: { type: String, enum: STYLE_MODES, required: true, default: 'reference' },
     status: { type: String, enum: ITEM_STATUSES, required: true },
     creativePlan: { type: Schema.Types.Mixed, default: null },
     planSource: { type: String, enum: PLAN_SOURCES },

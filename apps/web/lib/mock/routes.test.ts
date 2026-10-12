@@ -12,6 +12,7 @@ import {
   productListResponseSchema,
   referencesRequiredDetailsSchema,
   uploadsResponseSchema,
+  type BatchDetail,
 } from '@rs/shared';
 import type { ZodType } from 'zod';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -284,5 +285,38 @@ describe('errors use the shared envelope and status table', () => {
     };
     const response = await expectError(call('GET', '/api/v1/me', { target: broken }), 500, 'internal');
     expect(JSON.stringify(response.body)).not.toContain('secret detail');
+  });
+});
+
+describe('styleMode pass-through', () => {
+  async function detailOf(body: unknown): Promise<BatchDetail> {
+    const created = await call('POST', '/api/v1/batches', { body });
+    expect(created.status).toBe(201);
+    const id = batchSummarySchema.parse(created.body).id;
+    return batchDetailSchema.parse((await call('GET', `/api/v1/batches/${id}`)).body);
+  }
+
+  it('forwards the batch styleMode and lets a no-reference aesthetic through', async () => {
+    const detail = await detailOf({ idempotencyKey: KEY, products: [{ productGid: GID }], styleMode: 'apparel' });
+    expect(detail.items[0]?.styleMode).toBe('apparel');
+  });
+
+  it('forwards a per-product styleMode override', async () => {
+    const detail = await detailOf({
+      idempotencyKey: KEY,
+      products: [{ productGid: GID, styleMode: 'studio' }],
+      styleMode: 'apparel',
+    });
+    expect(detail.items[0]?.styleMode).toBe('studio');
+  });
+
+  it('still requires a reference when the effective styleMode is reference', async () => {
+    await expectError(
+      call('POST', '/api/v1/batches', {
+        body: { idempotencyKey: KEY, products: [{ productGid: GID }], styleMode: 'reference' },
+      }),
+      422,
+      'references_required',
+    );
   });
 });

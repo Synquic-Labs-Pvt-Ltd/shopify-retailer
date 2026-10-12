@@ -40,6 +40,7 @@ export function createItemService(deps: ItemDeps) {
       ownReferenceMediaIds: item.ownReferenceMediaIds.map((id) => id.toHexString()),
       references,
       referenceMode: item.referenceMode,
+      styleMode: item.styleMode ?? 'reference',
       creativePlan: item.creativePlan ?? null,
       planSource: item.planSource ?? null,
       config: batch.configSnapshot,

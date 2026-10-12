@@ -192,7 +192,7 @@ export function resolveLaneConfig(lanes: Record<string, LaneConfig>, lane: strin
 }
 
 export const DEFAULT_VIDEO_NEGATIVE_PROMPT =
-  'text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look';
+  'text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look, 3d render, video game, animation, plastic or waxy skin, rubbery, uncanny, stiff robotic motion, floating, warping, jitter, over-smooth slow motion';
 
 export const defaultGenerationConfig: GenerationConfig = {
   version: 1,

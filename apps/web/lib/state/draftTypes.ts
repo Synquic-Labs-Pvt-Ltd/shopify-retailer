@@ -1,4 +1,4 @@
-import type { MediaType } from '@rs/shared';
+import type { MediaType, StyleMode } from '@rs/shared';
 
 // The generation draft (SPEC 16.2 References): selection, references per product, common references and the
 // idempotency key. Persisted to localStorage so a reload resumes it.
@@ -39,6 +39,11 @@ export interface DraftData {
   products: DraftProduct[];
   commonRefs: DraftReference[];
   productRefs: Record<string, DraftReference[]>;
+  // The batch-level aesthetic: where every product's look comes from unless it sets its own (SPEC 9).
+  // Defaults to 'apparel' so a generation needs no uploads out of the box.
+  styleMode: StyleMode;
+  // Per-product overrides of styleMode, keyed by product id. A product not in here follows styleMode.
+  productStyleModes: Record<string, StyleMode>;
 }
 
 export type ToggleResult = 'added' | 'removed' | 'limit';
@@ -53,7 +58,12 @@ export interface DraftActions {
   // Replaces the selection (duplicates dropped, cut to maxProducts). Resolves with the number cut.
   setProducts: (products: readonly DraftProduct[], maxProducts: number) => number;
   // Empties the selection. References already added stay: selecting the product again brings them back.
+  // Per-product aesthetic overrides are dropped, since no product is selected.
   clearSelection: () => void;
+  // Sets the batch-level aesthetic.
+  setStyleMode: (mode: StyleMode) => void;
+  // Overrides one product's aesthetic, or clears the override (back to the batch default) with null.
+  setProductStyleMode: (productId: string, mode: StyleMode | null) => void;
   addRef: (target: ReferenceTarget, ref: DraftReference) => void;
   updateRef: (clientId: string, patch: ReferencePatch) => void;
   removeRef: (clientId: string) => void;

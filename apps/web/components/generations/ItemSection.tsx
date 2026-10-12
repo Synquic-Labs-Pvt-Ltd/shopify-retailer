@@ -2,7 +2,7 @@ import type { BatchItemView } from '@rs/shared';
 import { usableOutputs } from '@/lib/batch/outputs';
 import { attachState } from './attach';
 import { ItemActions } from './ItemActions';
-import { itemSummaryText, type ViewerTarget } from './logic';
+import { itemSummaryText, STYLE_MODE_RESULT_LABELS, type ViewerTarget } from './logic';
 import { OutputGrid } from './OutputGrid';
 import { ItemStatusBadge } from './StatusBadge';
 
@@ -38,7 +38,10 @@ export function ItemSection({
         <s-grid gridTemplateColumns="auto 1fr auto" alignItems="center" gap="base">
           <s-thumbnail size="small-100" src={item.imageUrl ?? undefined} alt="" />
           <s-stack gap="small-500">
-            <s-heading>{item.title}</s-heading>
+            <s-stack direction="inline" alignItems="center" gap="small-200">
+              <s-heading>{item.title}</s-heading>
+              <s-badge tone="neutral">{STYLE_MODE_RESULT_LABELS[item.styleMode]}</s-badge>
+            </s-stack>
             <s-text color="subdued">{itemSummaryText(item, expected)}</s-text>
           </s-stack>
           <ItemStatusBadge status={item.status} />

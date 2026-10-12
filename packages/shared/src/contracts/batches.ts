@@ -15,6 +15,7 @@ import {
   JOB_TYPES,
   LANE_PAUSE_REASONS,
   REFERENCE_MODES,
+  STYLE_MODES,
 } from '../enums';
 import { isoDateTimeSchema, objectIdSchema, pageInfoSchema, paginationQuerySchema, productGidSchema } from './common';
 import { mediaObjectSchema } from './media';
@@ -22,6 +23,7 @@ import { mediaObjectSchema } from './media';
 export const batchStatusSchema = z.enum(BATCH_STATUSES);
 export const itemStatusSchema = z.enum(ITEM_STATUSES);
 export const referenceModeSchema = z.enum(REFERENCE_MODES);
+export const styleModeSchema = z.enum(STYLE_MODES);
 
 // Stored on the batch at creation (SPEC 14.7). Counts, models and output parameters are frozen here.
 export const batchConfigSnapshotSchema = z.object({
@@ -52,6 +54,8 @@ export const batchCountsSchema = z.object({
 export const createBatchProductSchema = z.object({
   productGid: productGidSchema,
   referenceMediaIds: z.array(objectIdSchema).default([]),
+  // Overrides the batch-level styleMode for this product. Omitted means the batch default applies.
+  styleMode: styleModeSchema.optional(),
 });
 
 export const createBatchRequestSchema = z
@@ -59,6 +63,9 @@ export const createBatchRequestSchema = z
     idempotencyKey: z.uuid(),
     products: z.array(createBatchProductSchema).min(1),
     commonReferenceMediaIds: z.array(objectIdSchema).default([]),
+    // The aesthetic source for every product that does not set its own. Defaults to reference so the mobile
+    // app and older clients keep today's behaviour (a reference is required).
+    styleMode: styleModeSchema.default('reference'),
   })
   .refine((body) => new Set(body.products.map((p) => p.productGid)).size === body.products.length, {
     message: 'Each product may appear only once',
@@ -98,6 +105,7 @@ export const batchItemViewSchema = z.object({
   imageUrl: z.string().nullable(),
   status: itemStatusSchema,
   referenceMode: referenceModeSchema,
+  styleMode: styleModeSchema,
   outputs: z.array(mediaObjectSchema),
   jobs: z.array(batchJobViewSchema),
 });

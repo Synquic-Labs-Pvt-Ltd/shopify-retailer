@@ -74,26 +74,38 @@ describe('outputs', () => {
 });
 
 describe('resolutionBadge', () => {
-  it('warns when a product has nothing to generate from', () => {
-    expect(resolutionBadge({ mode: 'none', label: 'Needs a reference', unresolved: true }, false)).toEqual({
-      label: 'Needs a reference',
-      tone: 'warning',
-    });
+  it('warns when a reference product has nothing to generate from', () => {
+    expect(
+      resolutionBadge({ mode: 'none', styleMode: 'reference', label: 'Needs a reference', unresolved: true }, false),
+    ).toEqual({ label: 'Needs a reference', tone: 'warning' });
   });
 
   it('shows the resolution label in info, or neutral for style references only', () => {
-    expect(resolutionBadge({ mode: 'own_only', label: '2 references', unresolved: false }, false).tone).toBe('info');
-    expect(resolutionBadge({ mode: 'own_plus_common', label: '1 reference + common', unresolved: false }, false).tone).toBe(
+    expect(resolutionBadge({ mode: 'own_only', styleMode: 'reference', label: '2 photos', unresolved: false }, false).tone).toBe(
       'info',
     );
-    expect(resolutionBadge({ mode: 'common_only', label: 'Style references only', unresolved: false }, false)).toEqual({
-      label: 'Style references only',
-      tone: 'neutral',
+    expect(
+      resolutionBadge({ mode: 'own_plus_common', styleMode: 'reference', label: '1 photo + style', unresolved: false }, false)
+        .tone,
+    ).toBe('info');
+    expect(
+      resolutionBadge({ mode: 'common_only', styleMode: 'reference', label: 'Style references only', unresolved: false }, false),
+    ).toEqual({ label: 'Style references only', tone: 'neutral' });
+  });
+
+  it('shows apparel and studio as info, whatever their references', () => {
+    expect(resolutionBadge({ mode: 'none', styleMode: 'apparel', label: 'From the apparel', unresolved: false }, false)).toEqual(
+      { label: 'From the apparel', tone: 'info' },
+    );
+    // Style references present (common_only) but the aesthetic is studio, so it stays info, not neutral.
+    expect(resolutionBadge({ mode: 'common_only', styleMode: 'studio', label: 'Studio', unresolved: false }, false)).toEqual({
+      label: 'Studio',
+      tone: 'info',
     });
   });
 
   it('follows the server when a 422 named the product', () => {
-    expect(resolutionBadge({ mode: 'own_only', label: '1 reference', unresolved: false }, true)).toEqual({
+    expect(resolutionBadge({ mode: 'own_only', styleMode: 'reference', label: '1 photo', unresolved: false }, true)).toEqual({
       label: 'Needs a reference',
       tone: 'warning',
     });

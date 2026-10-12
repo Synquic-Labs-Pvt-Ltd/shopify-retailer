@@ -22,8 +22,10 @@ test('select products, add references, generate, follow the batch, retry and vie
   await expect(page.getByText('2 selected')).toBeVisible();
   await page.getByRole('button', { name: 'Generate content' }).click();
 
-  // 2. New generation: both products start unresolved
+  // 2. New generation: the default aesthetic ("From the apparel") needs no uploads, so switch to Custom
+  // references to exercise the reference flow. Both products then start unresolved.
   await expect(page).toHaveURL(/\/generate/);
+  await page.getByRole('button', { name: 'Custom references', exact: true }).click();
   // Polaris renders a banner heading twice in the DOM (light DOM and slot), so match the first.
   await expect(page.getByText('2 products need a reference.').first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: /^Generate 2 products/ })).toBeDisabled();

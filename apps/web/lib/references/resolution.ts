@@ -1,16 +1,33 @@
-import { resolveReferences, type CreateBatchInput, type ReferenceResolution } from '@rs/shared';
+import { resolveReferences, type CreateBatchInput, type ReferenceResolution, type StyleMode } from '@rs/shared';
 import type { DraftData, DraftProduct, DraftReference } from '@/lib/state/draftTypes';
 
-// SPEC 9, evaluated live: which references each selected product ends up with.
+// SPEC 9, evaluated live: the aesthetic and which references each selected product ends up with.
 type ResolutionDraft = Pick<DraftData, 'products' | 'commonRefs' | 'productRefs'>;
+type StyleDraft = ResolutionDraft & Pick<DraftData, 'styleMode' | 'productStyleModes'>;
 
 export interface ProductResolution {
   product: DraftProduct;
   own: DraftReference[];
+  // How the product's references resolve (SPEC 9), independent of the aesthetic.
   mode: ReferenceResolution;
+  // The effective aesthetic: the per-product override, or the batch default.
+  styleMode: StyleMode;
+  // The per-product override, or null when the product follows the batch default.
+  override: StyleMode | null;
   label: string;
+  // Only 'reference' products with no reference anywhere block the batch; apparel/studio need no upload.
   unresolved: boolean;
 }
+
+// The short, generic name of an aesthetic, for chips and the per-product "Using:" hint.
+export const STYLE_MODE_LABELS: Record<StyleMode, string> = {
+  apparel: 'From the apparel',
+  studio: 'Studio',
+  reference: 'Custom references',
+};
+
+// The aesthetics in the order the chip groups offer them.
+export const STYLE_MODE_OPTIONS: readonly StyleMode[] = ['apparel', 'studio', 'reference'];
 
 export function resolutionLabel(mode: ReferenceResolution, ownCount: number): string {
   const own = `${ownCount} ${ownCount === 1 ? 'photo' : 'photos'}`;
@@ -26,15 +43,24 @@ export function resolutionLabel(mode: ReferenceResolution, ownCount: number): st
   }
 }
 
-export function resolveProducts(draft: ResolutionDraft): ProductResolution[] {
+// The product badge: apparel/studio read as their aesthetic; a reference product reads as its resolution
+// (its references, or "Needs a reference" when it has none).
+export function styleModeLabel(styleMode: StyleMode, referenceMode: ReferenceResolution, ownCount: number): string {
+  return styleMode === 'reference' ? resolutionLabel(referenceMode, ownCount) : STYLE_MODE_LABELS[styleMode];
+}
+
+export function resolveProducts(draft: StyleDraft): ProductResolution[] {
   return draft.products.map((product) => {
     const own = draft.productRefs[product.id] ?? [];
+    const override = draft.productStyleModes[product.id] ?? null;
+    const styleMode = override ?? draft.styleMode;
     const { mode } = resolveReferences(own, draft.commonRefs);
-    return { product, own, mode, label: resolutionLabel(mode, own.length), unresolved: mode === 'none' };
+    const unresolved = styleMode === 'reference' && mode === 'none';
+    return { product, own, mode, styleMode, override, label: styleModeLabel(styleMode, mode, own.length), unresolved };
   });
 }
 
-export function unresolvedProductIds(draft: ResolutionDraft): string[] {
+export function unresolvedProductIds(draft: StyleDraft): string[] {
   return resolveProducts(draft)
     .filter((resolution) => resolution.unresolved)
     .map((resolution) => resolution.product.id);
@@ -61,14 +87,20 @@ function readyMediaIds(refs: readonly DraftReference[]): string[] {
   return refs.flatMap((ref) => (ref.status === 'ready' && ref.mediaId !== null ? [ref.mediaId] : []));
 }
 
-// POST /batches body for the draft. Only ready slots are sent; call it when allSlotsReady is true.
-export function buildBatchRequest(draft: ResolutionDraft & Pick<DraftData, 'idempotencyKey'>): CreateBatchInput {
+// POST /batches body for the draft. Only ready slots are sent; call it when allSlotsReady is true. The
+// batch-level styleMode goes on the body; a product carries its own styleMode only when it overrides the default.
+export function buildBatchRequest(draft: StyleDraft & Pick<DraftData, 'idempotencyKey'>): CreateBatchInput {
   return {
     idempotencyKey: draft.idempotencyKey,
-    products: draft.products.map((product) => ({
-      productGid: product.id,
-      referenceMediaIds: readyMediaIds(draft.productRefs[product.id] ?? []),
-    })),
+    styleMode: draft.styleMode,
+    products: draft.products.map((product) => {
+      const override = draft.productStyleModes[product.id];
+      return {
+        productGid: product.id,
+        referenceMediaIds: readyMediaIds(draft.productRefs[product.id] ?? []),
+        ...(override !== undefined && override !== draft.styleMode ? { styleMode: override } : {}),
+      };
+    }),
     commonReferenceMediaIds: readyMediaIds(draft.commonRefs),
   };
 }

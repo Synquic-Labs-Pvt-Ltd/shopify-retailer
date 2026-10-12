@@ -55,13 +55,68 @@ describe('selection', () => {
     expect(state().products.map((p) => p.id)).toEqual([product('1').id, product('2').id]);
   });
 
-  it('clearSelection keeps the references of the products', () => {
+  it('clearSelection keeps the references of the products but drops the aesthetic overrides', () => {
     const { state } = setup();
     state().toggleProduct(product('1'), 5);
     state().addRef({ kind: 'product', productId: product('1').id }, ref('a'));
+    state().setProductStyleMode(product('1').id, 'studio');
     state().clearSelection();
     expect(state().products).toEqual([]);
     expect(state().productRefs[product('1').id]).toHaveLength(1);
+    expect(state().productStyleModes).toEqual({});
+  });
+});
+
+describe('style modes', () => {
+  it('defaults to the apparel aesthetic with no overrides', () => {
+    const { state } = setup();
+    expect(state().styleMode).toBe('apparel');
+    expect(state().productStyleModes).toEqual({});
+  });
+
+  it('sets the batch aesthetic', () => {
+    const { state } = setup();
+    state().setStyleMode('studio');
+    expect(state().styleMode).toBe('studio');
+  });
+
+  it('sets, keeps and clears a per-product override', () => {
+    const { state } = setup();
+    const gid = product('1').id;
+    state().setProductStyleMode(gid, 'reference');
+    expect(state().productStyleModes).toEqual({ [gid]: 'reference' });
+
+    // Setting the same value is a no-op (no new object).
+    const before = state().productStyleModes;
+    state().setProductStyleMode(gid, 'reference');
+    expect(state().productStyleModes).toBe(before);
+
+    state().setProductStyleMode(gid, null);
+    expect(state().productStyleModes).toEqual({});
+
+    // Clearing an override that is not there is a no-op.
+    const empty = state().productStyleModes;
+    state().setProductStyleMode(gid, null);
+    expect(state().productStyleModes).toBe(empty);
+  });
+
+  it('drops the override when a product is removed from the selection', () => {
+    const { state } = setup();
+    state().toggleProduct(product('1'), 5);
+    state().toggleProduct(product('2'), 5);
+    state().setProductStyleMode(product('1').id, 'studio');
+    state().setProductStyleMode(product('2').id, 'reference');
+    state().toggleProduct(product('1'), 5); // removes product 1
+    expect(state().productStyleModes).toEqual({ [product('2').id]: 'reference' });
+  });
+
+  it('prunes overrides of products setProducts drops', () => {
+    const { state } = setup();
+    state().setProducts([product('1'), product('2')], 5);
+    state().setProductStyleMode(product('1').id, 'studio');
+    state().setProductStyleMode(product('2').id, 'reference');
+    state().setProducts([product('2')], 5);
+    expect(state().productStyleModes).toEqual({ [product('2').id]: 'reference' });
   });
 });
 
@@ -173,9 +228,9 @@ describe('persistence', () => {
     const { storage, state } = setup();
     state().bindShop('shop-a');
     const saved = JSON.parse(storage.getItem(DRAFT_STORAGE_KEY) as string) as { state: object; version: number };
-    expect(saved.version).toBe(1);
+    expect(saved.version).toBe(2);
     expect(Object.keys(saved.state).sort()).toEqual(
-      ['commonRefs', 'idempotencyKey', 'productRefs', 'products', 'shopId'].sort(),
+      ['commonRefs', 'idempotencyKey', 'productRefs', 'productStyleModes', 'products', 'shopId', 'styleMode'].sort(),
     );
   });
 
@@ -232,6 +287,32 @@ describe('persistence', () => {
     state().addRef({ kind: 'common' }, ref('c1', { status: 'uploading', progress: 0.5 }));
     await hydrateDraft(store);
     expect(state().commonRefs[0]?.status).toBe('uploading');
+  });
+
+  it('migrates a v1 draft to the apparel aesthetic, keeping its products and references', async () => {
+    const gid = product('1').id;
+    const v1 = {
+      state: {
+        idempotencyKey: 'key-v1',
+        shopId: 'shop-a',
+        products: [product('1')],
+        commonRefs: [ref('c1', { status: 'ready', mediaId: 'm1', progress: 1 })],
+        productRefs: { [gid]: [ref('p1', { status: 'ready', mediaId: 'm2', progress: 1 })] },
+      },
+      version: 1,
+    };
+    const storage = createMemoryStorage();
+    storage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(v1));
+    const store = createDraftStore({ storage, files: createFileRegistry() });
+    await hydrateDraft(store);
+
+    const restored = store.getState();
+    expect(restored.idempotencyKey).toBe('key-v1');
+    expect(restored.products.map((p) => p.id)).toEqual([gid]);
+    expect(restored.commonRefs[0]).toMatchObject({ clientId: 'c1', mediaId: 'm1' });
+    expect(restored.productRefs[gid]?.[0]).toMatchObject({ clientId: 'p1', mediaId: 'm2' });
+    expect(restored.styleMode).toBe('apparel');
+    expect(restored.productStyleModes).toEqual({});
   });
 
   it('keeps an empty draft when the stored value is garbage or from another version', async () => {

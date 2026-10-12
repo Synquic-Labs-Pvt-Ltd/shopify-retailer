@@ -49,12 +49,14 @@ export function referenceCountLabel(count: number, max: number): string {
 }
 
 // The badge of a product row. A product the server named in a 422 shows as unresolved until the draft changes.
+// A reference product with style references only stays neutral; every other resolved aesthetic reads as info.
 export function resolutionBadge(
-  resolution: Pick<ProductResolution, 'mode' | 'label' | 'unresolved'>,
+  resolution: Pick<ProductResolution, 'mode' | 'styleMode' | 'label' | 'unresolved'>,
   flaggedByServer: boolean,
 ): { label: string; tone: BadgeTone } {
   if (resolution.unresolved || flaggedByServer) return { label: 'Needs a reference', tone: 'warning' };
-  return { label: resolution.label, tone: resolution.mode === 'common_only' ? 'neutral' : 'info' };
+  const neutral = resolution.styleMode === 'reference' && resolution.mode === 'common_only';
+  return { label: resolution.label, tone: neutral ? 'neutral' : 'info' };
 }
 
 // The slots that take part in the batch: the common ones and those of the selected products.

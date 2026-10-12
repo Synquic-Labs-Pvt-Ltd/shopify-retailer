@@ -1,4 +1,4 @@
-import { MEDIA_TYPES } from '@rs/shared';
+import { MEDIA_TYPES, styleModeSchema, type StyleMode } from '@rs/shared';
 import { z } from 'zod';
 import type { DraftData, DraftReference, DraftState, ReferenceTarget } from './draftTypes';
 import { newId } from './ids';
@@ -8,7 +8,22 @@ type RefLists = Pick<DraftData, 'commonRefs' | 'productRefs'>;
 export const INTERRUPTED_MESSAGE = 'The upload was interrupted.';
 
 export function emptyDraft(): DraftData {
-  return { idempotencyKey: newId(), shopId: null, products: [], commonRefs: [], productRefs: {} };
+  return {
+    idempotencyKey: newId(),
+    shopId: null,
+    products: [],
+    commonRefs: [],
+    productRefs: {},
+    styleMode: 'apparel',
+    productStyleModes: {},
+  };
+}
+
+// The per-product aesthetic overrides restricted to the given product ids, so overrides of products that
+// left the selection do not linger.
+export function keptStyleModes(modes: Record<string, StyleMode>, keepIds: Iterable<string>): Record<string, StyleMode> {
+  const keep = new Set(keepIds);
+  return Object.fromEntries(Object.entries(modes).filter(([id]) => keep.has(id)));
 }
 
 export function refsOf(state: RefLists, target: ReferenceTarget): DraftReference[] {
@@ -60,6 +75,9 @@ const persistedSchema = z.object({
   products: z.array(z.object({ id: z.string().min(1), title: z.string(), imageUrl: z.string().nullable() })),
   commonRefs: z.array(referenceSchema),
   productRefs: z.record(z.string(), z.array(referenceSchema)),
+  // Older drafts have neither; the store migration fills them, and a lone missing field defaults here too.
+  styleMode: styleModeSchema.default('apparel'),
+  productStyleModes: z.record(z.string(), styleModeSchema).default({}),
 });
 
 // An upload cannot outlive the page, and its File is gone: whatever was mid-upload at the last save is
@@ -86,6 +104,8 @@ export function restoreDraft(persisted: unknown, current: DraftState): DraftStat
     productRefs: Object.fromEntries(
       Object.entries(saved.productRefs).map(([productId, refs]) => [productId, settleInterrupted(refs)]),
     ),
+    styleMode: saved.styleMode,
+    productStyleModes: saved.productStyleModes,
   };
 }
 
@@ -96,5 +116,7 @@ export function partializeDraft(state: DraftData): DraftData {
     products: state.products,
     commonRefs: state.commonRefs,
     productRefs: state.productRefs,
+    styleMode: state.styleMode,
+    productStyleModes: state.productStyleModes,
   };
 }

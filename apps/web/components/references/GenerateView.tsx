@@ -6,6 +6,7 @@ import { useDraftSession } from '@/components/products/useDraftSession';
 import { allSlotsReady, mergeUnresolved, resolveProducts } from '@/lib/references/resolution';
 import { showToast } from '@/lib/shopify';
 import { useDraftStore } from '@/lib/state';
+import { AestheticSection } from './AestheticSection';
 import { BlockedUploadBanner } from './BlockedUploadBanner';
 import { CommonReferences } from './CommonReferences';
 import { GenerateSkeleton } from './GenerateSkeleton';
@@ -38,7 +39,12 @@ export function GenerateView() {
   const products = useDraftStore((state) => state.products);
   const commonRefs = useDraftStore((state) => state.commonRefs);
   const productRefs = useDraftStore((state) => state.productRefs);
-  const draft = useMemo(() => ({ products, commonRefs, productRefs }), [products, commonRefs, productRefs]);
+  const styleMode = useDraftStore((state) => state.styleMode);
+  const productStyleModes = useDraftStore((state) => state.productStyleModes);
+  const draft = useMemo(
+    () => ({ products, commonRefs, productRefs, styleMode, productStyleModes }),
+    [products, commonRefs, productRefs, styleMode, productStyleModes],
+  );
   const resolutions = useMemo(() => resolveProducts(draft), [draft]);
   const counts = useMemo(() => slotCounts(draft), [draft]);
 
@@ -113,6 +119,8 @@ export function GenerateView() {
         </s-banner>
       ) : null}
 
+      <AestheticSection styleMode={styleMode} onChange={(mode) => useDraftStore.getState().setStyleMode(mode)} />
+
       <CommonReferences
         references={commonRefs}
         max={references?.maxCommon}
@@ -136,6 +144,7 @@ export function GenerateView() {
               onRetry={(clientId) => void actions.retry(clientId)}
               onRemove={actions.remove}
               onRemoveProduct={() => useDraftStore.getState().toggleProduct(resolution.product, maxProducts)}
+              onStyleMode={(mode) => useDraftStore.getState().setProductStyleMode(resolution.product.id, mode)}
             />
           </Fragment>
         ))}

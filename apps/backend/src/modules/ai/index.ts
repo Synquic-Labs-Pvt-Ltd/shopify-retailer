@@ -132,6 +132,7 @@ export {
   SAFE_IMAGE_NOTE,
   SAFE_PEOPLE,
   SAFE_VIDEO_NOTE,
+  STYLE_GUIDANCE,
   type ImageInput,
   type ImagePartsInput,
   type PlannerPartsInput,

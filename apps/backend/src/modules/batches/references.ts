@@ -1,4 +1,4 @@
-import { resolveReferences, type CreateBatchRequest, type ReferenceMode, type ReferencesConfig } from '@rs/shared';
+import { resolveReferences, type CreateBatchRequest, type ReferenceMode, type ReferencesConfig, type StyleMode } from '@rs/shared';
 import { AppError } from '../../core/errors';
 import type { MediaAssetRecord } from '../media';
 
@@ -7,6 +7,7 @@ export interface ResolvedProduct {
   own: string[];
   effective: string[];
   mode: ReferenceMode;
+  styleMode: StyleMode;
 }
 
 export interface ResolvedRequest {
@@ -34,9 +35,11 @@ export function resolveRequest(request: CreateBatchRequest, limits: ReferencesCo
         maxPerProduct: limits.maxPerProduct,
       });
     }
+    const styleMode = product.styleMode ?? request.styleMode;
     const resolved = resolveReferences(own, common);
-    if (resolved.mode === 'none') unresolved.push(product.productGid);
-    else products.push({ productGid: product.productGid, own, effective: resolved.effective, mode: resolved.mode });
+    // References blend in on top of every mode, but only the "reference" mode makes one mandatory.
+    if (styleMode === 'reference' && resolved.mode === 'none') unresolved.push(product.productGid);
+    else products.push({ productGid: product.productGid, own, effective: resolved.effective, mode: resolved.mode, styleMode });
   }
   if (unresolved.length > 0) throw AppError.referencesRequired(unresolved);
   return { common, products };

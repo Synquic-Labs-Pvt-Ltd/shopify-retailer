@@ -48,6 +48,7 @@ function item(title: string, outputs: MediaObject[], id = 'f'.repeat(24)): Batch
     imageUrl: null,
     status: 'completed',
     referenceMode: 'common_only',
+    styleMode: 'reference',
     outputs,
     jobs: [],
   };

@@ -254,17 +254,22 @@ The web app (apps/web) runs inside the Shopify admin and does not use the redire
 - Per-product references: 0 to references.maxPerProduct items per product.
 - Mixed types are allowed: jpeg, png and webp images; mp4 and mov videos.
 
-**Resolution per product (evaluated live in the app and enforced again by the server)**
+**Aesthetic source (styleMode), per product with a batch-level default**
+- Each product has an aesthetic source: `reference` (the look comes from the uploaded style references), `apparel` (the look is derived from the garment itself), or `studio` (a studio-setup photoshoot). Set it on the batch (default `reference`) and override it per product.
+- References always blend in when present: own references stay the product's extra photos, common references refine the world in every mode. Only `reference` mode makes a reference mandatory; `apparel` and `studio` never require one. So a product resolves when it has a reference OR its styleMode is `apparel`/`studio`.
+- The planner receives a STYLE DIRECTION paragraph per mode (section 12.1), and the deterministic fallback plan uses a matching setting. Video shots follow the same direction (apparel-derived b-roll, studio b-roll, or reference-led).
+
+**Reference resolution per product (evaluated live in the app and enforced again by the server)**
 
 | Product has own refs | Common refs exist | Effective references | referenceMode |
 |---|---|---|---|
 | yes | yes | own refs, then common refs | own_plus_common |
 | yes | no | own refs | own_only |
 | no | yes | common refs | common_only |
-| no | no | unresolved: the batch is blocked | none |
+| no | no | none (blocked only when styleMode is `reference`) | none |
 
 - If any product is unresolved, the app shows a warning Banner: "{n} products need a reference. Add references to each product or add a common reference." The Generate button stays disabled.
-- The server returns 422 references_required, with the unresolved productIds, if the client sends such a batch anyway.
+- The server returns 422 references_required, with the unresolved productIds, only for products on `reference` styleMode that have no reference.
 
 **Priority when the model's input caps are exceeded**
 - Own refs come before common refs. Within each group, upload order wins.
@@ -793,7 +798,7 @@ Fields:
 | POST /api/v1/media/:id/complete | none | the media object |
 | GET /api/v1/media | query ids (comma separated, max 50) | items: the media object |
 | DELETE /api/v1/media/:id | none | 204, or 409 in_use |
-| POST /api/v1/batches | idempotencyKey, products (productGid, referenceMediaIds), commonReferenceMediaIds | 201 batch summary; 422 references_required with details.productGids |
+| POST /api/v1/batches | idempotencyKey, styleMode (reference\|apparel\|studio, default reference), products (productGid, referenceMediaIds, optional styleMode), commonReferenceMediaIds | 201 batch summary; 422 references_required with details.productGids |
 | GET /api/v1/batches | query cursor, limit | items: batch summary; pageInfo |
 | GET /api/v1/batches/:id | none | batch summary plus items (productGid, title, imageUrl, status, referenceMode, outputs as media objects, jobs as type, outputIndex, status, error code) plus delay (reason, resumesAt) or null |
 | POST /api/v1/batches/:id/cancel | none | batch summary |
@@ -1206,6 +1211,10 @@ This section records where the implementation differs from the text above or add
   - Model input limits: gemini-2.5-flash-image documents 3 input images per prompt; the default of 4 product + 2 style images exceeds that and is unverified on Vertex. If the image model rejects it, lower ai.image.maxProductImages and maxStyleReferences in the config (hot reloaded).
 - Product list: products without an image are never listed (the server reads on to further Shopify pages, up to 4 requests, to fill a page). GET /products takes an optional status filter (active or draft) that Shopify applies, so tabs and pages agree. The API page limit stays 50.
 - API client errors: the web client has a request timeout, retries transport failures and 429/502/503/504 for GETs with backoff, and turns provider failures (quota, timeout, outage) into explanatory messages. Backend provider handling is unchanged (section 11.2).
+
+### Aesthetic source and more natural video
+- styleMode (`reference` | `apparel` | `studio`) is set on the batch and overridable per product (SPEC 9). `apparel` derives the whole scene from the garment; `studio` is a seamless-backdrop studio photoshoot; `reference` leads with the uploaded style references. References blend in on top in every mode, and only `reference` mode requires one, so a merchant can generate with no upload at all. The planner prompt carries a STYLE DIRECTION paragraph per mode (STYLE_GUIDANCE), the fallback plan has a matching setting, and REFERENCE_MODES gained `none` for an item that uses no references. Persisted on batch_items.styleMode and shown in the item view. Web only for now; the mobile app defaults to `reference`.
+- Video realism: the planner video rule and the Veo prompt now ask for real-camera footage with lifelike ambient motion instead of a stiff, over-smooth, rendered look, and the default video negativePrompt adds 3d-render / game / waxy / rubbery / warping / over-smooth-slow-motion terms.
 
 ### Safety blocks and adding outputs to products
 - Safety blocks: ordinary fashion shots (a person wearing the garment) were sometimes blocked by the provider's filters. The planner prompt now plans only wholesome, family-friendly content: garments described by cut and fabric, no suggestive or body words, calm fully clothed adult models in catalog poses, no intimate settings, and no person at all for children's, swimwear, underwear or sleepwear products. The image and Veo templates say the same.

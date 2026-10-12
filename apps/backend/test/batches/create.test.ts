@@ -159,6 +159,45 @@ describe('reference resolution (SPEC 9)', () => {
     expect(await BatchModel.countDocuments()).toBe(0);
   });
 
+  it('does not require a reference when the product uses the apparel or studio aesthetic, and stores the style mode', async () => {
+    const [a, b, c] = kit.products(3) as [string, string, string];
+    const common = kit.reference();
+    const summary = await kit.create({
+      styleMode: 'apparel',
+      products: [
+        { productGid: a },
+        { productGid: b, styleMode: 'studio' },
+        { productGid: c, styleMode: 'reference' },
+      ],
+      commonReferenceMediaIds: [common],
+    });
+    const items = await BatchItemModel.find({ batchId: summary.id }).sort({ _id: 1 }).lean();
+    const byGid = new Map(items.map((item) => [item.productGid, item]));
+    expect(byGid.get(a)?.styleMode).toBe('apparel');
+    expect(byGid.get(b)?.styleMode).toBe('studio');
+    expect(byGid.get(c)?.styleMode).toBe('reference');
+    // The common reference still blends into every product's effective set, whatever the style mode.
+    for (const gid of [a, b, c]) {
+      expect(byGid.get(gid)?.referenceMode).toBe('common_only');
+      expect(byGid.get(gid)?.effectiveReferenceMediaIds.map(String)).toEqual([common]);
+    }
+  });
+
+  it('still requires a reference for a product left on the reference aesthetic', async () => {
+    const [a, b] = kit.products(2) as [string, string];
+    const response = await kit
+      .api()
+      .post('/batches')
+      .send({
+        idempotencyKey: crypto.randomUUID(),
+        styleMode: 'studio',
+        products: [{ productGid: a }, { productGid: b, styleMode: 'reference' }],
+        commonReferenceMediaIds: [],
+      });
+    expect(response.status).toBe(422);
+    expect(referencesRequiredDetailsSchema.parse(response.body.error.details).productGids).toEqual([b]);
+  });
+
   it('puts own references before common ones, de-duplicated, mixing images and videos', async () => {
     const [gid] = kit.products(1) as [string];
     const ownVideo = kit.reference(SHOP_A, 'video');

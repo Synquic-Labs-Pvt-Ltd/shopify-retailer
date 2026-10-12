@@ -12,6 +12,7 @@ import type {
   PlanSource,
   ProductSnapshot,
   ReferenceMode,
+  StyleMode,
 } from '@rs/shared';
 import type { PromptVersions } from '../../core/config';
 import type { Logger } from '../../core/logger';
@@ -41,6 +42,8 @@ export interface BatchItemContext {
   // The effective references that are still ready and usable, own references first.
   references: MediaAssetRecord[];
   referenceMode: ReferenceMode;
+  // Where this item's background and aesthetic come from (SPEC 9).
+  styleMode: StyleMode;
   creativePlan: CreativePlan | null;
   planSource: PlanSource | null;
   // Frozen at batch creation (SPEC 14.7).

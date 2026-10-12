@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { DraftProduct, DraftReference } from '@/lib/state/draftTypes';
+import type { StyleMode } from '@rs/shared';
 import {
   allSlotsReady,
   buildBatchRequest,
   mergeUnresolved,
   resolutionLabel,
   resolveProducts,
+  STYLE_MODE_LABELS,
+  STYLE_MODE_OPTIONS,
+  styleModeLabel,
   unresolvedMessage,
   unresolvedProductIds,
 } from './resolution';
@@ -16,6 +20,11 @@ const p2: DraftProduct = { id: 'gid://shopify/Product/2', title: 'Two', imageUrl
 const p3: DraftProduct = { id: 'gid://shopify/Product/3', title: 'Three', imageUrl: null };
 
 const ready = (id: string, mediaId: string): DraftReference => slot(id, { status: 'ready', mediaId, progress: 1 });
+
+// A draft slice with the aesthetic defaults; a test overrides styleMode/productStyleModes as it needs.
+function styled<T extends object>(draft: T, styleMode: StyleMode = 'reference', productStyleModes: Record<string, StyleMode> = {}) {
+  return { ...draft, styleMode, productStyleModes };
+}
 
 describe('resolutionLabel', () => {
   it('words each mode', () => {
@@ -41,11 +50,11 @@ describe('unresolvedMessage', () => {
 
 describe('resolveProducts', () => {
   it('resolves each product against its own and the common references', () => {
-    const draft = {
+    const draft = styled({
       products: [p1, p2, p3],
       commonRefs: [ready('c1', 'mc1')],
       productRefs: { [p1.id]: [ready('a', 'm1')] },
-    };
+    });
     const resolutions = resolveProducts(draft);
     expect(resolutions.map((r) => [r.product.id, r.mode, r.label, r.unresolved])).toEqual([
       [p1.id, 'own_plus_common', '1 photo + style', false],
@@ -55,10 +64,53 @@ describe('resolveProducts', () => {
     expect(unresolvedProductIds(draft)).toEqual([]);
   });
 
-  it('flags products without any reference when there are no common ones', () => {
-    const draft = { products: [p1, p2], commonRefs: [], productRefs: { [p1.id]: [ready('a', 'm1')] } };
+  it('flags reference products without any reference when there are no common ones', () => {
+    const draft = styled({ products: [p1, p2], commonRefs: [], productRefs: { [p1.id]: [ready('a', 'm1')] } });
     expect(resolveProducts(draft).map((r) => r.mode)).toEqual(['own_only', 'none']);
     expect(unresolvedProductIds(draft)).toEqual([p2.id]);
+  });
+
+  it('never flags apparel or studio products, even with no reference anywhere', () => {
+    const base = { products: [p1, p2], commonRefs: [], productRefs: {} };
+    for (const mode of ['apparel', 'studio'] as const) {
+      const draft = styled(base, mode);
+      expect(resolveProducts(draft).map((r) => [r.styleMode, r.label, r.unresolved])).toEqual([
+        [mode, STYLE_MODE_LABELS[mode], false],
+        [mode, STYLE_MODE_LABELS[mode], false],
+      ]);
+      expect(unresolvedProductIds(draft)).toEqual([]);
+    }
+  });
+
+  it('applies a per-product override on top of the batch default', () => {
+    // Batch default apparel (nothing unresolved), but p1 is overridden to reference with no refs -> unresolved.
+    const draft = styled({ products: [p1, p2], commonRefs: [], productRefs: {} }, 'apparel', { [p1.id]: 'reference' });
+    const resolutions = resolveProducts(draft);
+    expect(resolutions.map((r) => [r.styleMode, r.override, r.unresolved])).toEqual([
+      ['reference', 'reference', true],
+      ['apparel', null, false],
+    ]);
+    expect(unresolvedProductIds(draft)).toEqual([p1.id]);
+  });
+
+  it('an override to apparel resolves a product the reference default would have blocked', () => {
+    const draft = styled({ products: [p1], commonRefs: [], productRefs: {} }, 'reference', { [p1.id]: 'apparel' });
+    expect(resolveProducts(draft)[0]).toMatchObject({ styleMode: 'apparel', override: 'apparel', unresolved: false });
+    expect(unresolvedProductIds(draft)).toEqual([]);
+  });
+});
+
+describe('styleModeLabel and options', () => {
+  it('labels apparel and studio by their aesthetic and reference by its resolution', () => {
+    expect(styleModeLabel('apparel', 'none', 0)).toBe('From the apparel');
+    expect(styleModeLabel('studio', 'common_only', 0)).toBe('Studio');
+    expect(styleModeLabel('reference', 'own_only', 2)).toBe('2 photos');
+    expect(styleModeLabel('reference', 'none', 0)).toBe('Needs a reference');
+  });
+
+  it('offers the three aesthetics apparel first', () => {
+    expect(STYLE_MODE_OPTIONS).toEqual(['apparel', 'studio', 'reference']);
+    expect(STYLE_MODE_LABELS).toEqual({ apparel: 'From the apparel', studio: 'Studio', reference: 'Custom references' });
   });
 });
 
@@ -90,20 +142,23 @@ describe('allSlotsReady', () => {
 });
 
 describe('buildBatchRequest', () => {
-  it('uses the idempotency key and sends only the ready media ids', () => {
-    const request = buildBatchRequest({
-      idempotencyKey: 'key-1',
-      products: [p1, p2, p3],
-      commonRefs: [ready('c1', 'mc1'), slot('c2', { status: 'failed', mediaId: 'mc2' })],
-      productRefs: {
-        [p1.id]: [ready('a', 'm1'), ready('b', 'm2'), slot('c', { status: 'processing', mediaId: 'm3' })],
-        [p2.id]: [],
-        [p3.id]: [ready('d', 'm4')],
-        'gid://shopify/Product/99': [ready('e', 'm5')],
-      },
-    });
+  it('uses the idempotency key, the batch styleMode and sends only the ready media ids', () => {
+    const request = buildBatchRequest(
+      styled({
+        idempotencyKey: 'key-1',
+        products: [p1, p2, p3],
+        commonRefs: [ready('c1', 'mc1'), slot('c2', { status: 'failed', mediaId: 'mc2' })],
+        productRefs: {
+          [p1.id]: [ready('a', 'm1'), ready('b', 'm2'), slot('c', { status: 'processing', mediaId: 'm3' })],
+          [p2.id]: [],
+          [p3.id]: [ready('d', 'm4')],
+          'gid://shopify/Product/99': [ready('e', 'm5')],
+        },
+      }),
+    );
     expect(request).toEqual({
       idempotencyKey: 'key-1',
+      styleMode: 'reference',
       products: [
         { productGid: p1.id, referenceMediaIds: ['m1', 'm2'] },
         { productGid: p2.id, referenceMediaIds: [] },
@@ -111,5 +166,22 @@ describe('buildBatchRequest', () => {
       ],
       commonReferenceMediaIds: ['mc1'],
     });
+  });
+
+  it('carries a per-product styleMode only when it differs from the batch default', () => {
+    const request = buildBatchRequest(
+      styled(
+        { idempotencyKey: 'key-2', products: [p1, p2, p3], commonRefs: [], productRefs: {} },
+        'apparel',
+        // p1 overridden to a different mode -> emitted; p2 overridden to the default -> omitted; p3 no override.
+        { [p1.id]: 'reference', [p2.id]: 'apparel' },
+      ),
+    );
+    expect(request.styleMode).toBe('apparel');
+    expect(request.products).toEqual([
+      { productGid: p1.id, referenceMediaIds: [], styleMode: 'reference' },
+      { productGid: p2.id, referenceMediaIds: [] },
+      { productGid: p3.id, referenceMediaIds: [] },
+    ]);
   });
 });

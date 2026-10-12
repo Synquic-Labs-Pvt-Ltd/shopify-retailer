@@ -71,6 +71,7 @@ function item(title: string, outputs: MediaObject[], jobs: BatchJobView[] = []):
     imageUrl: null,
     status: 'generating',
     referenceMode: 'common_only',
+    styleMode: 'reference',
     outputs,
     jobs,
   };

@@ -15,10 +15,13 @@ export function useGenerate() {
   const [leaving, setLeaving] = useState(false);
   const commonRefs = useDraftStore((state) => state.commonRefs);
   const productRefs = useDraftStore((state) => state.productRefs);
+  const styleMode = useDraftStore((state) => state.styleMode);
+  const productStyleModes = useDraftStore((state) => state.productStyleModes);
 
+  // Any change that can affect resolution (references or the aesthetic) supersedes the server's 422 list.
   useEffect(() => {
     setServerGids((current) => (current.length === 0 ? current : []));
-  }, [commonRefs, productRefs]);
+  }, [commonRefs, productRefs, styleMode, productStyleModes]);
 
   const generate = useCallback(async (): Promise<void> => {
     try {

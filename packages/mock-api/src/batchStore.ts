@@ -6,6 +6,7 @@ import {
   type BatchDelay,
   type BatchDetail,
   type BatchItemView,
+  type StyleMode,
   type BatchJobView,
   type BatchSummary,
   type CreateBatchInput,
@@ -44,6 +45,7 @@ const MODES: readonly ReferenceMode[] = ['common_only', 'own_plus_common', 'own_
 interface SimItem {
   productGid: string;
   referenceMode: ReferenceMode;
+  styleMode: StyleMode;
   failVideo: boolean;
 }
 
@@ -166,6 +168,7 @@ function itemView(batch: SimBatch, itemIndex: number, state: SimItemState): Batc
     imageUrl: product?.featuredImageUrl ?? null,
     status: itemStatusOf(state),
     referenceMode: item?.referenceMode ?? 'common_only',
+    styleMode: item?.styleMode ?? 'reference',
     outputs: state.work.filter((job) => job.status === 'succeeded').map((job) => outputOf(batch, itemIndex, job)),
     jobs: [toView(state.plan), ...state.work.map(toView)],
   };
@@ -281,6 +284,7 @@ export function createMockBatchStore(): MockBatchStore {
       spec.products.map((product, i) => ({
         productGid: productGid(product),
         referenceMode: MODES[i % MODES.length] ?? 'common_only',
+        styleMode: (['reference', 'apparel', 'studio'] as const)[i % 3] ?? 'reference',
         failVideo: spec.failedItem === i,
       })),
       createdAtMs,
@@ -303,8 +307,11 @@ export function createMockBatchStore(): MockBatchStore {
         if (existing.idempotencyKey === body.idempotencyKey) return toSummary(detailOf(existing));
       }
       const common = body.commonReferenceMediaIds ?? [];
+      const batchStyle = body.styleMode ?? 'reference';
+      const styleOf = (product: (typeof body.products)[number]): StyleMode => product.styleMode ?? batchStyle;
+      // Only the reference mode requires an upload; apparel and studio derive the look themselves.
       const unresolved = body.products
-        .filter((product) => (product.referenceMediaIds ?? []).length === 0 && common.length === 0)
+        .filter((product) => styleOf(product) === 'reference' && (product.referenceMediaIds ?? []).length === 0 && common.length === 0)
         .map((product) => product.productGid);
       if (unresolved.length > 0) {
         throw new ApiError(422, 'references_required', 'Some products have no references', { productGids: unresolved });
@@ -327,8 +334,8 @@ export function createMockBatchStore(): MockBatchStore {
       const batch = add(
         body.products.map((product, i): SimItem => {
           const own = (product.referenceMediaIds ?? []).length > 0;
-          const mode: ReferenceMode = own ? (common.length > 0 ? 'own_plus_common' : 'own_only') : 'common_only';
-          return { productGid: product.productGid, referenceMode: mode, failVideo: i === failedItem };
+          const mode: ReferenceMode = own ? (common.length > 0 ? 'own_plus_common' : 'own_only') : common.length > 0 ? 'common_only' : 'none';
+          return { productGid: product.productGid, referenceMode: mode, styleMode: styleOf(product), failVideo: i === failedItem };
         }),
         Date.now(),
         body.idempotencyKey,

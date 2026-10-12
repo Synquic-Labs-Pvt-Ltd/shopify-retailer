@@ -3,6 +3,7 @@ import { createCreativePlanSchema, defaultGenerationConfig, type CreativePlan, t
 import { DEFAULT_PROMPTS_DIR, readPromptFile } from '../../src/core/config';
 import {
   PRODUCT_IMAGES_NOTE,
+  STYLE_GUIDANCE,
   SAFE_IMAGE_NOTE,
   SAFE_PEOPLE,
   SAFE_VIDEO_NOTE,
@@ -166,6 +167,29 @@ describe('planner prompt', () => {
   });
 });
 
+describe('style modes (SPEC 9)', () => {
+  it('injects the reference style direction by default', () => {
+    const rendered = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 2, videoCount: 1 }, config);
+    expect(rendered).toContain(STYLE_GUIDANCE.reference);
+    expect(rendered).not.toContain('{{styleGuidance}}');
+  });
+
+  it('injects the apparel and studio style direction when asked', () => {
+    const apparel = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 1, videoCount: 0 }, config, 'apparel');
+    const studio = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 1, videoCount: 0 }, config, 'studio');
+    expect(apparel).toContain('Derive the whole world from the apparel itself');
+    expect(apparel).toContain(STYLE_GUIDANCE.apparel);
+    expect(studio).toContain('professional photo studio');
+    expect(studio).toContain(STYLE_GUIDANCE.studio);
+  });
+
+  it('builds a studio fallback plan with a studio backdrop', () => {
+    const plan = buildFallbackPlan(snapshot, { imageCount: 1, videoCount: 0 }, config, 'studio');
+    expect(plan.referenceStyle.setting).toContain('studio');
+    expect(plan.imageShots[0]?.prompt).toContain('studio');
+  });
+});
+
 describe('image prompt', () => {
   it('builds image parts: label before each product image, then style references, then the prompt', () => {
     const img = (n: number) => ({ mimeType: 'image/jpeg', data: bytes(n) });
@@ -267,7 +291,8 @@ describe('video prompt', () => {
     const shot = { ...buildFakePlan({ imageCount: 0, videoCount: 1 }).videoShots[0]!, prompt: 'A lamp glows.', cameraMove: 'slow push-in', subjectAction: 'a hand turns the switch', lighting: 'warm window light' };
     const rendered = renderVideoPrompt(videoTemplate, plan, shot);
     expect(rendered).not.toContain('{{');
-    expect(rendered.startsWith('A lamp glows. Camera: slow push-in, single continuous shot, smooth and slow, cinematic commercial quality. Action: a hand turns the switch. Lighting: warm window light.')).toBe(true);
+    expect(rendered.startsWith('A lamp glows. Camera: slow push-in, single continuous shot, smooth and steady with natural easing, shot on a real cinema camera, cinematic commercial quality. Action: a hand turns the switch. Lighting: warm window light.')).toBe(true);
+    expect(rendered).toContain('Make it look like real footage, not a 3D render or game');
     expect(rendered).toContain('exactly the product shown in the reference images');
     expect(rendered).toContain('never a different garment: exact shape; logo on the base.');
     expect(rendered.trimEnd().endsWith('No on-screen text, captions, subtitles or watermarks.')).toBe(true);

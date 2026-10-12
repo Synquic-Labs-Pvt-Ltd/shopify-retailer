@@ -49,12 +49,20 @@ export function isTerminalBatchStatus(status: BatchStatus): boolean {
 }
 
 // Persisted per batch item (SPEC 14.8).
-export const REFERENCE_MODES = ['own_plus_common', 'own_only', 'common_only'] as const;
+// Which references a batch item ends up using. "none" means the item uses no references (the aesthetic comes
+// from the apparel or a studio setup, SPEC 9).
+export const REFERENCE_MODES = ['own_plus_common', 'own_only', 'common_only', 'none'] as const;
 export type ReferenceMode = (typeof REFERENCE_MODES)[number];
 
-// Live resolution result (SPEC 9): the persisted modes plus "none" for an unresolved product.
-export const REFERENCE_RESOLUTIONS = [...REFERENCE_MODES, 'none'] as const;
-export type ReferenceResolution = (typeof REFERENCE_RESOLUTIONS)[number];
+// Alias kept for the apps' live resolution display.
+export const REFERENCE_RESOLUTIONS = REFERENCE_MODES;
+export type ReferenceResolution = ReferenceMode;
+
+// Where the background and overall aesthetic of a product's shots come from (SPEC 9). "reference" needs at
+// least one reference; "apparel" derives the world from the garment itself; "studio" is a studio photoshoot.
+// Style references, when present, refine the result in every mode.
+export const STYLE_MODES = ['reference', 'apparel', 'studio'] as const;
+export type StyleMode = (typeof STYLE_MODES)[number];
 
 export const ITEM_STATUSES = [
   'pending',
