@@ -38,7 +38,7 @@ export type ReferenceVideoInput =
 // adds them, refine the result in every mode.
 export const STYLE_GUIDANCE: Record<StyleMode, string> = {
   reference:
-    'STYLE DIRECTION: Build the world (setting, environment, lighting, color grading, mood and composition) primarily from the STYLE REFERENCES the merchant provided. If none are provided, infer a fitting, premium, natural setting from the product category and data.',
+    'STYLE DIRECTION: The STYLE REFERENCES are the main brief. Match them closely — recreate their setting, environment, set dressing and props, color palette and color grading, lighting, time of day, mood and composition, and stage similar props (furniture, plants, equipment, and the like), so every shot looks like it belongs to that same shoot. Keep the model dressed only in the product and the outfit from the PRODUCT IMAGES; take everything else about the world from the references. If none are provided, infer a fitting, premium, natural setting from the product category and data.',
   apparel:
     'STYLE DIRECTION: There are no required references. Derive the whole world from the apparel itself — its design, fabric, cut, era, colors and the kind of customer who wears it. Choose a real, believable lifestyle location where this exact piece would be worn, a palette and light that flatter it, and props that fit its story. Make each shot a rich, aspirational, editorial scene (not a plain backdrop) and vary the locations across the shots while keeping one coherent aesthetic. If STYLE REFERENCES are also provided, let them refine this direction.',
   studio:
@@ -88,7 +88,7 @@ export const PRODUCT_IMAGES_NOTE =
   'The PRODUCT IMAGES above all show the SAME product, from different angles and in different details. Study every one of them together: they are the ground truth for every garment, color, print and detail. Anything a style reference shows is NOT the product.';
 
 export const STYLE_REFERENCES_NOTE =
-  'The STYLE REFERENCES below are about a different world. Use them only for setting, environment, lighting, color grading, mood, composition and motion. Ignore every garment, product, accessory and person in them, even if it looks like the product.';
+  'The STYLE REFERENCES below are the look to match: recreate their setting, environment, set dressing and props, color palette and grading, lighting, mood, composition and motion closely, and stage similar props so the result belongs to the same shoot. Do not put their clothing on the model, and do not reproduce brand names, logos, readable text, identifiable people, or a different product they show.';
 
 // The product facts the planner may use. Image URLs add nothing for the model and are left out.
 function productData(snapshot: ProductSnapshot): string {
@@ -143,7 +143,7 @@ export interface ImagePartsInput {
 }
 
 export const STYLE_REFERENCE_LABEL =
-  'setting, light and mood only; do not copy any garment, product, accessory or person from it';
+  'recreate its setting, props, palette, light and mood; do not put its clothing on the model or copy its logos, text or a different product';
 
 // SPEC 10.3 order: a label before each product image, a label before each style reference, then the prompt.
 export function buildImageParts(input: ImagePartsInput, config: GenerationConfig): AiPart[] {

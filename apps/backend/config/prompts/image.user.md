@@ -2,7 +2,7 @@ Create one brand-new photorealistic photograph for an online store: a wholesome,
 
 This is a fresh photoshoot, NOT an edit or a copy of the product images. Keep the garment and its details identical to the PRODUCT IMAGES, but build a completely new image from the shot description below: a new pose, a new camera angle and framing, and the new background and lighting described. Never reproduce the pose, crop, background, mannequin or flat-lay of a product image, and never output a plain cut-out or packshot unless the shot explicitly asks for one.
 
-Image roles: images labeled PRODUCT IMAGE are the exact product to feature, shown from different views; together they are the ground truth for its appearance. Images labeled STYLE REFERENCE only define setting, lighting, color grading and mood. A style reference never shows the product: do not copy any garment, outfit, shoes, accessory, object, product, person, logo or text from it, even if it looks similar to the product.
+Image roles: images labeled PRODUCT IMAGE are the exact product to feature, shown from different views; together they are the ground truth for its appearance. Images labeled STYLE REFERENCE are the world to recreate: match their setting, environment, set dressing and props, color palette, color grading, lighting and mood closely, and stage similar props so this photo belongs to the same shoot. A style reference never shows the product: do not dress the model in any clothing from it, and do not reproduce brand names, logos, readable text, identifiable people, or a different product it shows.
 
 Shot: {{shot.prompt}}
 Camera and framing: {{shot.camera}}

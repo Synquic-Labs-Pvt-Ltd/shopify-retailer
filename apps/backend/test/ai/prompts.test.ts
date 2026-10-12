@@ -4,6 +4,7 @@ import { DEFAULT_PROMPTS_DIR, readPromptFile } from '../../src/core/config';
 import {
   PRODUCT_IMAGES_NOTE,
   STYLE_GUIDANCE,
+  STYLE_REFERENCE_LABEL,
   SAFE_IMAGE_NOTE,
   SAFE_PEOPLE,
   SAFE_VIDEO_NOTE,
@@ -204,7 +205,7 @@ describe('image prompt', () => {
     );
     const sequence = parts.map((part) => (part.kind === 'text' ? part.text : part.kind));
     const view = 'the exact product, the same item from another view';
-    const style = `setting, light and mood only; do not copy any garment, product, accessory or person from it`;
+    const style = STYLE_REFERENCE_LABEL;
     expect(sequence).toEqual([
       `PRODUCT IMAGE 1 of 4 (${view})`,
       'inlineData',
