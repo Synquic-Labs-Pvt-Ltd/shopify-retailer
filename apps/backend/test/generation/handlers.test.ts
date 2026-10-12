@@ -202,7 +202,7 @@ describe('image handler inputs (SPEC 10.3)', () => {
     ]);
     expect(lines.slice(8, 10)).toEqual([styleLabel(1), `inline: ${urlOf(common1)}`]);
     expect(lines).toHaveLength(11);
-    expect(lines[10]).toContain('Create one photorealistic lifestyle photograph');
+    expect(lines[10]).toContain('Create one brand-new photorealistic photograph');
     expect(lines[10]).toContain('3:4 aspect ratio');
     expect(lines.join('\n')).not.toContain(urlOf(common2));
     expect(lines.join('\n')).not.toContain(urlOf(video));

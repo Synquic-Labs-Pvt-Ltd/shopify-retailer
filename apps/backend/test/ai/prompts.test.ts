@@ -179,7 +179,8 @@ describe('style modes (SPEC 9)', () => {
     const studio = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 1, videoCount: 0 }, config, 'studio');
     expect(apparel).toContain('Derive the whole world from the apparel itself');
     expect(apparel).toContain(STYLE_GUIDANCE.apparel);
-    expect(studio).toContain('professional photo studio');
+    expect(studio).toContain('editorial studio campaign');
+    expect(studio).toContain('never a copy of the product packshot');
     expect(studio).toContain(STYLE_GUIDANCE.studio);
   });
 
@@ -234,7 +235,9 @@ describe('image prompt', () => {
     if (shot === undefined) throw new Error('fixture plan has no image shot');
     const rendered = renderImagePrompt(imageTemplate, plan, { ...shot, prompt: 'PROMPT', camera: 'CAMERA', lighting: 'LIGHT', people: 'none', negative: 'blur, noise' }, config);
     expect(rendered).not.toContain('{{');
-    expect(rendered.startsWith('Create one photorealistic lifestyle photograph for an online store: a wholesome, family-friendly catalog image')).toBe(true);
+    expect(rendered.startsWith('Create one brand-new photorealistic photograph for an online store: a wholesome, family-friendly catalog image')).toBe(true);
+    expect(rendered).toContain('This is a fresh photoshoot, NOT an edit or a copy');
+    expect(rendered).toContain('never cut off the head, hands or feet');
     expect(rendered).toContain('Shot: PROMPT\nCamera and framing: CAMERA\nLighting: LIGHT\nPeople: none');
     expect(rendered).toContain('Preserve: exact shape; logo on the base.');
     expect(rendered).toContain('a single image, 3:4 aspect ratio');

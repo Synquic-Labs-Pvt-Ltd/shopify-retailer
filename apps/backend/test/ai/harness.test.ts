@@ -43,7 +43,7 @@ describe('harness-local', () => {
     expect(new Set(readdirSync(outDir))).toEqual(new Set(['plan.json', 'image-1.jpg', 'image-2.jpg', 'video-1.mp4', 'prompts', 'summary.json']));
     expect([...readFileSync(join(outDir, 'image-1.jpg'))]).toEqual([...FAKE_JPEG]);
     expect(readFileSync(join(outDir, 'video-1.mp4')).subarray(4, 8).toString('ascii')).toBe('ftyp');
-    expect(readFileSync(join(outDir, 'prompts', 'image-1.txt'), 'utf8')).toContain('Create one photorealistic lifestyle photograph');
+    expect(readFileSync(join(outDir, 'prompts', 'image-1.txt'), 'utf8')).toContain('Create one brand-new photorealistic photograph');
     expect(JSON.parse(readFileSync(join(outDir, 'plan.json'), 'utf8'))).toMatchObject({ planSource: 'planner', plan: { imageShots: [{}, {}], videoShots: [{}] } });
   });
 

@@ -147,7 +147,7 @@ describe('what the provider receives for a product with own and common reference
       ]);
       const prompt = call.parts[call.parts.length - 1];
       const text = prompt?.kind === 'text' ? prompt.text : '';
-      expect(text).toContain('Create one photorealistic lifestyle photograph');
+      expect(text).toContain('Create one brand-new photorealistic photograph');
       expect(text).toContain('3:4 aspect ratio');
       expect(text).toContain('Preserve: exact shape, colors, materials, printed text and logos as in the product images');
       expect(text).not.toContain('{{');
