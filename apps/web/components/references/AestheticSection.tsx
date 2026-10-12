@@ -23,10 +23,11 @@ export function AestheticSection({ styleMode, onChange }: AestheticSectionProps)
           return (
             <s-clickable-chip
               key={mode}
-              color={selected ? 'strong' : 'base'}
+              color={selected ? 'strong' : 'subdued'}
               accessibilityLabel={selected ? `${label}, selected` : label}
               onClick={() => onChange(mode)}
             >
+              {selected ? <s-icon slot="graphic" type="check" /> : null}
               {label}
             </s-clickable-chip>
           );

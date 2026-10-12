@@ -44,12 +44,13 @@ export function ProductReferenceRow({
           </s-stack>
           <s-stack direction="inline" alignItems="center" gap="small-200">
             <s-clickable-chip
-              color={override === null ? 'strong' : 'base'}
+              color={override === null ? 'strong' : 'subdued'}
               accessibilityLabel={
                 override === null ? `Use global aesthetic for ${product.title}, selected` : `Use global aesthetic for ${product.title}`
               }
               onClick={() => onStyleMode(null)}
             >
+              {override === null ? <s-icon slot="graphic" type="check" /> : null}
               Use global
             </s-clickable-chip>
             {STYLE_MODE_OPTIONS.map((mode) => {
@@ -58,10 +59,11 @@ export function ProductReferenceRow({
               return (
                 <s-clickable-chip
                   key={mode}
-                  color={selected ? 'strong' : 'base'}
+                  color={selected ? 'strong' : 'subdued'}
                   accessibilityLabel={selected ? `${label} for ${product.title}, selected` : `${label} for ${product.title}`}
                   onClick={() => onStyleMode(mode)}
                 >
+                  {selected ? <s-icon slot="graphic" type="check" /> : null}
                   {label}
                 </s-clickable-chip>
               );
