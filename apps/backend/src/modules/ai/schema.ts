@@ -20,6 +20,9 @@ function reduceNode(node: unknown, path: string): GeminiSchema {
   if (!isRecord(node)) throw new Error(`Unsupported JSON Schema node at ${path}`);
   const type = node.type;
 
+  // A field description tells the model what to write there. The schema carries it as `description`.
+  const described: JsonRecord = typeof node.description === 'string' && node.description.length > 0 ? { description: node.description } : {};
+
   if (type === 'object') {
     const properties = isRecord(node.properties) ? node.properties : {};
     const reduced: JsonRecord = {};
@@ -27,6 +30,7 @@ function reduceNode(node: unknown, path: string): GeminiSchema {
     const required = Array.isArray(node.required) ? node.required.filter((item) => typeof item === 'string') : [];
     return {
       type: 'OBJECT',
+      ...described,
       properties: reduced,
       ...(required.length > 0 ? { required } : {}),
       propertyOrdering: Object.keys(properties),
@@ -34,14 +38,14 @@ function reduceNode(node: unknown, path: string): GeminiSchema {
   }
 
   if (type === 'array') {
-    const result: GeminiSchema = { type: 'ARRAY', items: reduceNode(node.items, `${path}[]`) };
+    const result: GeminiSchema = { type: 'ARRAY', ...described, items: reduceNode(node.items, `${path}[]`) };
     if (typeof node.minItems === 'number' && node.minItems > 0) result.minItems = node.minItems;
     if (typeof node.maxItems === 'number') result.maxItems = node.maxItems;
     return result;
   }
 
   if (typeof type === 'string' && type in SCALAR_TYPES) {
-    const result: GeminiSchema = { type: SCALAR_TYPES[type] };
+    const result: GeminiSchema = { type: SCALAR_TYPES[type], ...described };
     if (Array.isArray(node.enum)) result.enum = node.enum;
     return result;
   }

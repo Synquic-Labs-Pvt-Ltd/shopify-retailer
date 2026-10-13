@@ -50,8 +50,12 @@ export const imageConfigSchema = z.strictObject({
 
 export const aiConfigSchema = z.strictObject({
   image: z.strictObject({
+    // At most this many images of each kind go to the image model...
     maxProductImages: positiveInt,
     maxStyleReferences: nonNegativeInt,
+    // ...and at most this many in total. Gemini image models document 3 input images per prompt, and what comes
+    // after that is not reliably used, so the budget is split between one style reference and the product images.
+    maxInputImages: positiveInt.default(3),
   }),
   planner: z.strictObject({
     // The planner is a text model that reads many images, so it gets every product image up to this cap.
@@ -192,7 +196,7 @@ export function resolveLaneConfig(lanes: Record<string, LaneConfig>, lane: strin
 }
 
 export const DEFAULT_VIDEO_NEGATIVE_PROMPT =
-  'text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look, 3d render, video game, animation, plastic or waxy skin, rubbery, uncanny, stiff robotic motion, floating, warping, jitter, over-smooth slow motion';
+  'text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look, 3d render, video game, animation, plastic or waxy skin, rubbery, uncanny, stiff robotic motion, floating, warping, jitter, over-smooth slow motion, bokeh, blurred background, background blur, shallow depth of field, out of focus, soft focus, tilt-shift';
 
 export const defaultGenerationConfig: GenerationConfig = {
   version: 1,
@@ -206,7 +210,7 @@ export const defaultGenerationConfig: GenerationConfig = {
   locations: { planner: 'us-central1', image: 'us-central1', video: 'us-central1' },
   image: { aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' },
   ai: {
-    image: { maxProductImages: 4, maxStyleReferences: 2 },
+    image: { maxProductImages: 3, maxStyleReferences: 1, maxInputImages: 3 },
     planner: { maxProductImages: 10, maxReferenceImages: 6, maxReferenceVideos: 2, temperature: 0.6 },
   },
   video: {

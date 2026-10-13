@@ -43,7 +43,7 @@ const labelsAndInputs = (parts: AiPart[]): string[] =>
 
 const productView = (n: number, total: number): string =>
   `text: PRODUCT IMAGE ${n} of ${total} (the exact product, the same item from another view)`;
-const styleLabel = (n: number): string => `text: STYLE REFERENCE ${n} (${STYLE_REFERENCE_LABEL})`;
+const styleLabel = (n: number, total: number): string => `text: STYLE REFERENCE ${n} of ${total} (${STYLE_REFERENCE_LABEL})`;
 
 async function createWithRefs(own: string[], common: string[], productOverrides = {}) {
   const gid = kit.catalog.addProduct(productOverrides);
@@ -189,22 +189,17 @@ describe('image handler inputs (SPEC 10.3)', () => {
     const request = kit.ai.calls.image[0];
     expect(request).toMatchObject({ model: 'fake-image', location: 'us-central1', aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' });
     const lines = describeParts(request?.parts ?? []);
-    // The product's own uploads sit right after the featured image; the video upload is not an image input.
-    expect(lines.slice(0, 8)).toEqual([
-      productView(1, 4),
-      `inline: ${images[0]}`,
-      productView(2, 4),
-      `inline: ${urlOf(own1)}`,
-      productView(3, 4),
-      `inline: ${urlOf(own2)}`,
-      productView(4, 4),
-      `inline: ${images[1]}`,
-    ]);
-    expect(lines.slice(8, 10)).toEqual([styleLabel(1), `inline: ${urlOf(common1)}`]);
-    expect(lines).toHaveLength(11);
-    expect(lines[10]).toContain('Create one brand-new photorealistic photograph');
-    expect(lines[10]).toContain('3:4 aspect ratio');
+    // The model takes 3 images: the style reference first (the scene to recreate), then the featured image and the
+    // product's own first upload. The video upload is not an image input.
+    expect(lines.slice(0, 2)).toEqual([styleLabel(1, 1), `inline: ${urlOf(common1)}`]);
+    expect(lines.slice(2, 6)).toEqual([productView(1, 2), `inline: ${images[0]}`, productView(2, 2), `inline: ${urlOf(own1)}`]);
+    expect(lines).toHaveLength(7);
+    expect(lines[6]).toContain('Create one brand-new photorealistic photograph');
+    expect(lines[6]).toContain('3:4 aspect ratio');
+    // A style reference was sent, so the prompt carries the scene brief.
+    expect(lines[6]).toContain('Scene brief: take the outfit from the PRODUCT IMAGES');
     expect(lines.join('\n')).not.toContain(urlOf(common2));
+    expect(lines.join('\n')).not.toContain(urlOf(own2));
     expect(lines.join('\n')).not.toContain(urlOf(video));
   });
 
