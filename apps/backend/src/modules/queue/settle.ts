@@ -41,6 +41,7 @@ function errorDoc(error: JobError, at: Date): Record<string, unknown> {
 function auditFields(audit: JobAudit | undefined): Record<string, unknown> {
   return {
     ...(audit?.promptVersion === undefined ? {} : { promptVersion: audit.promptVersion }),
+    ...(audit?.promptRevision === undefined ? {} : { promptRevision: audit.promptRevision }),
     ...(audit?.renderedPrompt === undefined ? {} : { renderedPrompt: audit.renderedPrompt }),
   };
 }

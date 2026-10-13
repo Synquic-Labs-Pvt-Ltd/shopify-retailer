@@ -5,11 +5,14 @@ import {
   beginJob,
   CANCELLED,
   downloadFailed,
-  ensurePlan,
+  ensurePlanWithSource,
   loadImages,
   NO_PRODUCT_IMAGES,
+  outputPrompts,
   persistOutput,
   productImageSources,
+  promptAudit,
+  promptRefOf,
   referenceSources,
   splitReferences,
   type Runtime,
@@ -22,7 +25,7 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   const { ctx, config } = run;
   const outputIndex = job.outputIndex ?? 0;
 
-  const plan = await ensurePlan(rt, run);
+  const { plan, source: planSource } = await ensurePlanWithSource(rt, run);
   const shot = plan.imageShots[outputIndex];
   if (shot === undefined) {
     return { kind: 'failed', error: failure('internal', `The creative plan has no image shot ${outputIndex + 1}`, false) };
@@ -31,9 +34,9 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   if (productSources.length === 0) return NO_PRODUCT_IMAGES;
 
   const safe = isSafeAttempt(job);
-  const template = rt.getPrompt('image.user');
+  const template = await rt.resolvePrompt(ctx.shopId, 'image.user', promptRefOf(ctx.config, 'image'));
   const prompt = renderImagePrompt(template.text, plan, shot, config, { safe });
-  const audit = { promptVersion: template.version, renderedPrompt: prompt };
+  const audit = promptAudit(template, prompt);
 
   try {
     // Common references are style only; the product's own uploads are already part of productSources.
@@ -60,6 +63,7 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       mimeType: generated.value.mimeType,
       bytes: generated.value.bytes,
       shotTitle: shot.title,
+      prompts: outputPrompts(ctx.config, planSource, 'image'),
     });
     if (!stored.ok) return { ...stored.outcome, audit };
     return {

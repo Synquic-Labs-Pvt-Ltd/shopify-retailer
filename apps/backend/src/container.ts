@@ -7,6 +7,7 @@ import { createBatchesModule, type BatchesModule } from './modules/batches';
 import { createCatalogModule, type CatalogModule } from './modules/catalog';
 import { createGenerationModule } from './modules/generation';
 import { createMediaModule, type MediaModule } from './modules/media';
+import { createPromptsModule, type PromptsModule } from './modules/prompts';
 import type { QueueModule } from './modules/queue';
 import { createQueueModule } from './modules/queue/module';
 import type { RateLimitService } from './modules/ratelimit';
@@ -26,6 +27,7 @@ export interface Container {
   catalog: CatalogModule;
   media: MediaModule;
   batches: BatchesModule;
+  prompts: PromptsModule;
 }
 
 export interface ContainerDeps {
@@ -72,9 +74,13 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     },
   });
 
+  // Per-store prompt versions (SPEC 12.6): the global files stay version 0 and every store edits its own copy.
+  const prompts = createPromptsModule({ requireAuth, getGlobalPrompt: (name) => config.getPrompt(name), logger });
+
   const batches = createBatchesModule({
     getConfig,
     getPromptVersions: () => config.getPromptVersions(),
+    getPromptRefs: (shopId) => prompts.service.activeRefs(shopId),
     queue,
     governor: rateLimit.governor,
     catalog: catalog.service,
@@ -91,6 +97,7 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     media: media.service,
     getConfig,
     getPrompt: (name) => config.getPrompt(name),
+    resolvePrompt: (shopId, name, version) => prompts.service.resolve(shopId, name, version),
     logger,
   });
   for (const handler of generation.handlers) queue.runner.registerHandler(handler);
@@ -103,7 +110,8 @@ export function createContainer({ env, logger, config }: ContainerDeps): Contain
     await batches.service.purgeShop(shopId);
     await queue.store.purgeShop(shopId);
     await media.service.purgeShop(shopId);
+    await prompts.service.purgeShop(shopId);
   });
 
-  return { shops, auth, shopify, rateLimit, queue, ai, catalog, media, batches };
+  return { shops, auth, shopify, rateLimit, queue, ai, catalog, media, batches, prompts };
 }

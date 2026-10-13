@@ -21,6 +21,7 @@ export interface JobDoc {
   lease?: { owner?: string; expiresAt?: Date };
   operation?: { name?: string; submittedAt?: Date; nextPollAt?: Date; polls?: number };
   promptVersion?: string;
+  promptRevision?: number;
   renderedPrompt?: string;
   output?: { mediaAssetId?: Types.ObjectId | null; providerResponseId?: string | null; modelVersion?: string | null };
   error?: {
@@ -63,6 +64,7 @@ const jobSchema = new Schema<JobDoc>(
       polls: { type: Number },
     },
     promptVersion: { type: String },
+    promptRevision: { type: Number },
     renderedPrompt: { type: String },
     output: {
       mediaAssetId: { type: objectId },

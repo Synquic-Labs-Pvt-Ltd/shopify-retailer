@@ -8,6 +8,7 @@ import { DEV_TOAST_EVENT, type DevToastDetail } from '@/lib/shopify';
 const NAV = [
   { href: '/generations', label: 'Generations' },
   { href: '/products', label: 'Products' },
+  { href: '/prompts', label: 'Prompts' },
 ];
 
 const styles: Record<string, CSSProperties> = {

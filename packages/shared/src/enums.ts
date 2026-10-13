@@ -48,6 +48,10 @@ export function isTerminalBatchStatus(status: BatchStatus): boolean {
   return (TERMINAL_BATCH_STATUSES as readonly string[]).includes(status);
 }
 
+// The three prompt templates (SPEC 12). Global defaults are files; a store can version its own copy (SPEC 12.6).
+export const PROMPT_NAMES = ['planner.system', 'image.user', 'video.user'] as const;
+export type PromptName = (typeof PROMPT_NAMES)[number];
+
 // Persisted per batch item (SPEC 14.8).
 // Which references a batch item ends up using. "none" means the item uses no references (the aesthetic comes
 // from the apparel or a studio setup, SPEC 9).

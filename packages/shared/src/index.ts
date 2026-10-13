@@ -2,6 +2,7 @@ export * from './enums';
 export * from './shop-domain';
 export * from './references';
 export * from './plan';
+export * from './prompts';
 export * from './config/generation-config';
 export * from './contracts';
 export * from './client-api';

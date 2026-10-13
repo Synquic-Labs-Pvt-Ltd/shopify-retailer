@@ -1,4 +1,4 @@
-import { createMockApi } from '@rs/mock-api';
+import { createMockApi, createMockPromptsApi } from '@rs/mock-api';
 import type { NextRequest } from 'next/server';
 import { errorResponse, handleMockRequest, type MockResponse } from '@/lib/mock/routes';
 
@@ -14,7 +14,7 @@ function toResponse({ status, body }: MockResponse): Response {
 }
 
 async function readBody(request: NextRequest): Promise<unknown> {
-  if (request.method !== 'POST') return undefined;
+  if (request.method !== 'POST' && request.method !== 'PUT') return undefined;
   try {
     return (await request.json()) as unknown;
   } catch {
@@ -26,7 +26,7 @@ async function handle(request: NextRequest): Promise<Response> {
   if (process.env.NEXT_PUBLIC_MOCK !== '1') return toResponse(errorResponse('not_found', 'Not found'));
   const url = new URL(request.url);
   return toResponse(
-    await handleMockRequest(createMockApi(), {
+    await handleMockRequest({ ...createMockApi(), prompts: createMockPromptsApi() }, {
       method: request.method,
       pathname: url.pathname,
       query: url.searchParams,
@@ -38,4 +38,5 @@ async function handle(request: NextRequest): Promise<Response> {
 
 export const GET = handle;
 export const POST = handle;
+export const PUT = handle;
 export const DELETE = handle;

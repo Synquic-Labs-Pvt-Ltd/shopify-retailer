@@ -17,6 +17,7 @@ import { FAKE_JPEG } from '../../src/modules/ai/fake-media';
 import type { AuthenticatedRequest } from '../../src/modules/auth';
 import { createBatchesModule, type BatchesModule } from '../../src/modules/batches';
 import { createGenerationModule, type GenerationService } from '../../src/modules/generation';
+import { createPromptsModule, type PromptsModule } from '../../src/modules/prompts';
 import { createQueueModule, type QueueJob, type QueueModule } from '../../src/modules/queue';
 import { createRateLimitModule } from '../../src/modules/ratelimit';
 import type { Governor } from '../../src/modules/ratelimit';
@@ -57,6 +58,8 @@ export interface Kit {
   catalog: FakeCatalog;
   media: FakeMedia;
   batches: BatchesModule;
+  // The real per-store prompts module (SPEC 12.6), so tests edit a store's prompts the way the API does.
+  promptStore: PromptsModule;
   generation: GenerationService;
   app: Express;
   // URLs the handlers downloaded.
@@ -75,7 +78,7 @@ export interface Kit {
   products(n: number): string[];
   reference(shopId?: string, mediaType?: 'image' | 'video'): string;
   create(input: Omit<CreateBatchInput, 'idempotencyKey'> & { idempotencyKey?: string }, shopId?: string): Promise<BatchSummary>;
-  api(shopId?: string): { post: (path: string) => request.Test; get: (path: string) => request.Test };
+  api(shopId?: string): { post: (path: string) => request.Test; get: (path: string) => request.Test; put: (path: string) => request.Test };
 }
 
 export interface KitOptions {
@@ -126,9 +129,12 @@ export function createKit(options: KitOptions = {}): Kit {
     next();
   };
 
+  const promptStore = createPromptsModule({ requireAuth, getGlobalPrompt: (name) => prompts.getPrompt(name), logger: silent });
+
   const batches = createBatchesModule({
     getConfig,
     getPromptVersions: () => prompts.getPromptVersions(),
+    getPromptRefs: (shopId) => promptStore.service.activeRefs(shopId),
     queue,
     governor,
     catalog,
@@ -156,6 +162,7 @@ export function createKit(options: KitOptions = {}): Kit {
     media,
     getConfig,
     getPrompt: (name) => prompts.getPrompt(name),
+    resolvePrompt: (shopId, name, version) => promptStore.service.resolve(shopId, name, version),
     logger: silent,
     fetchImpl,
     now: clock.now,
@@ -165,6 +172,7 @@ export function createKit(options: KitOptions = {}): Kit {
   const app = express();
   app.use(express.json());
   app.use('/api/v1', batches.router);
+  app.use('/api/v1', promptStore.router);
   app.use(createErrorHandler(silent));
 
   const tick = async (): Promise<void> => {
@@ -182,6 +190,7 @@ export function createKit(options: KitOptions = {}): Kit {
     catalog,
     media,
     batches,
+    promptStore,
     generation,
     app,
     fetched,
@@ -212,6 +221,7 @@ export function createKit(options: KitOptions = {}): Kit {
       return {
         post: (path) => agent.post(`/api/v1${path}`).set('x-shop', shopId),
         get: (path) => agent.get(`/api/v1${path}`).set('x-shop', shopId),
+        put: (path) => agent.put(`/api/v1${path}`).set('x-shop', shopId),
       };
     },
   };
@@ -235,5 +245,5 @@ export function createGate() {
 }
 
 export async function prepareIndexes(kit: Kit): Promise<void> {
-  await Promise.all([kit.batches.ensureIndexes(), kit.queue.ensureIndexes()]);
+  await Promise.all([kit.batches.ensureIndexes(), kit.queue.ensureIndexes(), kit.promptStore.ensureIndexes()]);
 }

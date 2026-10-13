@@ -2,7 +2,7 @@ import type { BatchItemView } from '@rs/shared';
 import { usableOutputs } from '@/lib/batch/outputs';
 import { attachState } from './attach';
 import { ItemActions } from './ItemActions';
-import { itemSummaryText, STYLE_MODE_RESULT_LABELS, type ViewerTarget } from './logic';
+import { itemPromptsText, itemSummaryText, STYLE_MODE_RESULT_LABELS, type ViewerTarget } from './logic';
 import { OutputGrid } from './OutputGrid';
 import { ItemStatusBadge } from './StatusBadge';
 
@@ -21,7 +21,8 @@ interface ItemSectionProps {
   onAttach: () => void;
 }
 
-// One product of the generation: its header, what can be done with its outputs, and the grid of the outputs.
+// One product of the generation: its header, what can be done with its outputs, the grid of the outputs, and which
+// prompt versions made them.
 export function ItemSection({
   item,
   expected,
@@ -32,6 +33,7 @@ export function ItemSection({
   onDownload,
   onAttach,
 }: ItemSectionProps) {
+  const prompts = itemPromptsText(item);
   return (
     <s-section>
       <s-stack gap="base">
@@ -56,6 +58,7 @@ export function ItemSection({
           onAttach={onAttach}
         />
         <OutputGrid item={item} onOpen={onOpen} />
+        {prompts === null ? null : <s-text color="subdued">{prompts}</s-text>}
       </s-stack>
     </s-section>
   );

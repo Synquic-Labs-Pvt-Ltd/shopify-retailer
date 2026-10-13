@@ -42,6 +42,7 @@ async function findOrCreateRecord(input: PersistOutputInput, shopId: Types.Objec
       batchId: new Types.ObjectId(input.batchId),
       batchItemId: new Types.ObjectId(input.batchItemId),
       shotTitle: input.shotTitle,
+      ...(input.prompts === undefined ? {} : { prompts: input.prompts }),
     }).then((doc) => doc.toObject());
   } catch (err) {
     // Another worker created the record between the read and the insert.

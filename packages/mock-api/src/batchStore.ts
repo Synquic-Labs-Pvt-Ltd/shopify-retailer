@@ -17,6 +17,7 @@ import {
   type ReferenceMode,
 } from '@rs/shared';
 import { PRODUCTS } from './fixtures';
+import type { ActivePromptVersions } from './promptStore';
 import { IMAGES_PER_PRODUCT, SAMPLE_VIDEO_URL, VIDEOS_PER_PRODUCT, objectId, picture, productGid } from './util';
 
 // Batches in mock mode are a pure function of the clock. A batch created at t0 behaves like this:
@@ -27,6 +28,8 @@ import { IMAGES_PER_PRODUCT, SAMPLE_VIDEO_URL, VIDEOS_PER_PRODUCT, objectId, pic
 //   t0 + 3.5 to 9.0 s  the batch carries a delay object (provider busy), so at least one 4 s poll sees it
 // so successive polls see queued -> running -> completed_with_errors. Retry failed restarts that video, which
 // then succeeds after 5.8 s. Cancel freezes the clock: whatever was done stays, the rest is cancelled.
+// Every output carries the prompt versions that made it (SPEC 12.6): the versions the shop had active when the batch
+// was created, and for the retried video the ones active at the retry. Without edits that is the global default (0).
 
 const FIRST_START_MS = 1_000;
 const ITEM_STAGGER_MS = 1_500;
@@ -59,6 +62,8 @@ interface SimBatch {
   items: SimItem[];
   // Output media id -> when attachMedia put it on its product.
   attachedAt: Map<string, string>;
+  // The prompt versions behind the outputs of this batch.
+  prompts: ActivePromptVersions;
 }
 
 interface SimJob extends BatchJobView {
@@ -148,6 +153,7 @@ function outputOf(batch: SimBatch, itemIndex: number, job: SimJob): MediaObject 
     productGid: gid,
     shotTitle: SHOT_TITLES[key] ?? null,
     attachedAt: batch.attachedAt.get(id) ?? null,
+    prompts: { planner: batch.prompts.planner, render: isVideo ? batch.prompts.video : batch.prompts.image },
     createdAt: isoOf(job.finishedAtMs ?? batch.createdAtMs),
   };
 }
@@ -259,10 +265,13 @@ const SEEDS: SeedSpec[] = [
   { minutesAgo: 26 * 60, products: [7, 8], cancelledAfterSec: 6.5 },
 ];
 
-export function createMockBatchStore(): MockBatchStore {
+const GLOBAL_PROMPTS: ActivePromptVersions = { planner: 0, image: 0, video: 0 };
+
+// `activePrompts` says which prompt versions the shop has active right now; a new batch snapshots them.
+export function createMockBatchStore(activePrompts: () => ActivePromptVersions = () => GLOBAL_PROMPTS): MockBatchStore {
   const batches = new Map<string, SimBatch>();
 
-  const add = (items: SimItem[], createdAtMs: number, idempotencyKey: string): SimBatch => {
+  const add = (items: SimItem[], createdAtMs: number, idempotencyKey: string, prompts: ActivePromptVersions): SimBatch => {
     const index = batches.size;
     const batch: SimBatch = {
       index,
@@ -273,6 +282,7 @@ export function createMockBatchStore(): MockBatchStore {
       retriedAtMs: null,
       items,
       attachedAt: new Map(),
+      prompts,
     };
     batches.set(batch.id, batch);
     return batch;
@@ -289,6 +299,7 @@ export function createMockBatchStore(): MockBatchStore {
       })),
       createdAtMs,
       `seed-${seedIndex}`,
+      GLOBAL_PROMPTS,
     );
     if (spec.cancelledAfterSec !== undefined) batch.cancelledAtMs = createdAtMs + spec.cancelledAfterSec * 1000;
   });
@@ -339,6 +350,7 @@ export function createMockBatchStore(): MockBatchStore {
         }),
         Date.now(),
         body.idempotencyKey,
+        { ...activePrompts() },
       );
       return toSummary(detailOf(batch));
     },
@@ -363,7 +375,11 @@ export function createMockBatchStore(): MockBatchStore {
       const detail = detailOf(batch);
       const terminalWithErrors = detail.status === 'completed_with_errors' || detail.status === 'failed';
       const retryable = terminalWithErrors && batch.retriedAtMs === null;
-      if (retryable) batch.retriedAtMs = Date.now();
+      if (retryable) {
+        batch.retriedAtMs = Date.now();
+        // The failed job is a video, and it runs again with the video prompt that is active now.
+        batch.prompts = { ...batch.prompts, video: activePrompts().video };
+      }
       return toSummary(detailOf(batch));
     },
 

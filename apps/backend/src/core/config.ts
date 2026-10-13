@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync, watch, type FSWatcher } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generationConfigSchema, laneKey, resolveLaneConfig, type GenerationConfig } from '@rs/shared';
+import { generationConfigSchema, laneKey, PROMPT_NAMES, resolveLaneConfig, type GenerationConfig, type PromptName } from '@rs/shared';
 import type { Logger } from './logger';
 
-export const PROMPT_NAMES = ['planner.system', 'image.user', 'video.user'] as const;
-export type PromptName = (typeof PROMPT_NAMES)[number];
+export { PROMPT_NAMES, type PromptName };
 
 export interface LoadedPrompt {
   name: PromptName;

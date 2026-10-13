@@ -165,6 +165,13 @@ button.tile:focus-visible {
   text-align: center;
 }
 
+.promptInfo {
+  margin: 4px 0 0;
+  color: #616161;
+  font-size: 13px;
+  text-align: center;
+}
+
 @keyframes pulse {
   0%,
   100% {

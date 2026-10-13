@@ -8,8 +8,13 @@ import {
   meResponseSchema,
   productDetailSchema,
   productListResponseSchema,
+  promptDetailSchema,
+  promptListResponseSchema,
+  promptVersionTextSchema,
   uploadsResponseSchema,
   type Api,
+  type PromptName,
+  type PromptsApi,
 } from '@rs/shared';
 import { apiRequest } from './client';
 import { IDEMPOTENT_POST_RETRY } from './retry';
@@ -78,4 +83,18 @@ export const endpoints: Endpoints = {
         timeoutMs: ATTACH_MEDIA_TIMEOUT_MS,
       }),
   },
+};
+
+// /api/v1/prompts/:name. The names contain a dot ("planner.system"), which encodeURIComponent keeps.
+const promptPath = (name: PromptName): string => `/api/v1/prompts/${encodeURIComponent(name)}`;
+
+// Per-store prompt editing (SPEC 12.6). A save is never repeated automatically: every one adds a version.
+export const promptEndpoints: PromptsApi = {
+  list: () => apiRequest({ method: 'GET', path: '/api/v1/prompts', schema: promptListResponseSchema }),
+  get: (name) => apiRequest({ method: 'GET', path: promptPath(name), schema: promptDetailSchema }),
+  getVersion: (name, version) =>
+    apiRequest({ method: 'GET', path: `${promptPath(name)}/versions/${version}`, schema: promptVersionTextSchema }),
+  save: (name, body) => apiRequest({ method: 'PUT', path: promptPath(name), body, schema: promptDetailSchema }),
+  activate: (name, body) =>
+    apiRequest({ method: 'POST', path: `${promptPath(name)}/activate`, body, schema: promptDetailSchema }),
 };

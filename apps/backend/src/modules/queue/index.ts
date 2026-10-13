@@ -40,6 +40,8 @@ export interface QueueJob {
   deferrals: number;
   operation: JobOperation | null;
   promptVersion: string | null;
+  // The store's version of the prompt the job ran with (0 is the global default). Null before the job rendered one.
+  promptRevision: number | null;
   renderedPrompt: string | null;
   output: JobOutput | null;
   error: (JobError & { at: Date }) | null;
@@ -62,6 +64,7 @@ export interface NewJob {
 
 export interface JobAudit {
   promptVersion?: string;
+  promptRevision?: number;
   renderedPrompt?: string;
 }
 

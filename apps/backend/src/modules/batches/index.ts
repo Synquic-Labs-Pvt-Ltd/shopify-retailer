@@ -91,6 +91,8 @@ export interface BatchesModuleDeps {
   // Read at every use: admission limits, reference caps and lanes are live. The batch snapshot is frozen.
   getConfig: () => GenerationConfig;
   getPromptVersions: () => PromptVersions;
+  // The store's active version of each prompt, frozen into the batch (SPEC 12.6). Defaults to the global defaults (0).
+  getPromptRefs?: (shopId: string) => Promise<BatchConfigSnapshot['promptRefs']>;
   queue: Pick<QueueService, 'store'>;
   governor: Pick<Governor, 'listPaused'>;
   catalog: Pick<CatalogService, 'snapshotProducts'>;

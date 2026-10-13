@@ -30,6 +30,7 @@ export function toQueueJob(doc: JobDoc): QueueJob {
           }
         : null,
     promptVersion: doc.promptVersion ?? null,
+    promptRevision: doc.promptRevision ?? null,
     renderedPrompt: doc.renderedPrompt ?? null,
     output:
       output === undefined

@@ -6,18 +6,25 @@ import {
   beginJob,
   CANCELLED,
   downloadFailed,
-  ensurePlan,
+  ensurePlanWithSource,
   loadImages,
   NO_PRODUCT_IMAGES,
+  outputPrompts,
   persistOutput,
   productImageSources,
+  promptAudit,
+  promptRefOf,
   type Runtime,
 } from './runtime';
 
 // SPEC 10.4: up to 3 product images feed Veo's reference mode.
 const MAX_REFERENCE_IMAGES = 3;
 
-function awaiting(rt: Runtime, operationName: string, audit?: { promptVersion: string; renderedPrompt: string }): JobOutcome {
+function awaiting(
+  rt: Runtime,
+  operationName: string,
+  audit?: { promptVersion: string; promptRevision: number; renderedPrompt: string },
+): JobOutcome {
   const nextPollAt = new Date(rt.now().getTime() + rt.getConfig().queue.videoPollIntervalMs);
   return { kind: 'awaiting_operation', operation: { name: operationName, nextPollAt }, ...(audit === undefined ? {} : { audit }) };
 }
@@ -34,7 +41,7 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   const { ctx } = run;
   const outputIndex = job.outputIndex ?? 0;
 
-  const plan = await ensurePlan(rt, run);
+  const { plan } = await ensurePlanWithSource(rt, run);
   const shot = plan.videoShots[outputIndex];
   if (shot === undefined) {
     return { kind: 'failed', error: failure('internal', `The creative plan has no video shot ${outputIndex + 1}`, false) };
@@ -42,9 +49,9 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   const productSources = productImageSources(ctx).slice(0, MAX_REFERENCE_IMAGES);
   if (productSources.length === 0) return NO_PRODUCT_IMAGES;
 
-  const template = rt.getPrompt('video.user');
+  const template = await rt.resolvePrompt(ctx.shopId, 'video.user', promptRefOf(ctx.config, 'video'));
   const prompt = renderVideoPrompt(template.text, plan, shot, { safe: isSafeAttempt(job) });
-  const audit = { promptVersion: template.version, renderedPrompt: prompt };
+  const audit = promptAudit(template, prompt);
   const video = ctx.config.video;
 
   try {
@@ -100,7 +107,7 @@ async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promi
 
   // The operation finished, but the batch may have been cancelled meanwhile: do not store the result.
   if ((await beginJob(rt, job, { references: false })) === null) return CANCELLED;
-  const plan = await ensurePlan(rt, run);
+  const { plan, source: planSource } = await ensurePlanWithSource(rt, run);
   const shot = plan.videoShots[job.outputIndex ?? 0];
   const stored = await persistOutput(rt, {
     job,
@@ -109,6 +116,7 @@ async function pollVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promi
     mimeType: polled.value.video.mimeType,
     bytes: polled.value.video.bytes,
     shotTitle: shot?.title ?? 'Video',
+    prompts: outputPrompts(ctx.config, planSource, 'video'),
   });
   // The operation is already paid for and its result stays fetchable, so a storage hiccup polls the same
   // operation again (bounded by videoMaxWaitMinutes) instead of submitting, and paying for, a new video.

@@ -8,6 +8,9 @@ import {
   type BatchStatus,
   type BatchSummary,
   type JobType,
+  type MediaObject,
+  type MediaPrompts,
+  type MediaType,
   type StyleMode,
 } from '@rs/shared';
 import { plural } from '@/lib/batch/format';
@@ -94,6 +97,52 @@ export const STYLE_MODE_RESULT_LABELS: Record<StyleMode, string> = {
   apparel: 'From the apparel',
   studio: 'Studio',
 };
+
+// The prompt versions an output was generated with (SPEC 12.6). Version 0 is the global default; a planner of null
+// means the plan came from the fallback plan, so no planner prompt was used.
+type OutputPrompts = Pick<MediaObject, 'prompts' | 'mediaType'>;
+
+export const promptVersionText = (version: number): string => (version === 0 ? 'global default' : `v${version}`);
+
+// "global default" when nothing was edited, otherwise "planner v2 · render global default".
+function promptsText({ planner, render }: MediaPrompts): string {
+  if (planner === 0 && render === 0) return 'global default';
+  const plan = planner === null ? 'fallback plan' : `planner ${promptVersionText(planner)}`;
+  return `${plan} · render ${promptVersionText(render)}`;
+}
+
+const MEDIA_TYPES_LABEL: Record<string, string> = { image: 'images', video: 'videos', 'image,video': 'images and videos' };
+
+// The line under a product: "Prompts: global default" or "Prompts: planner v2 · render v1". Outputs of one product
+// that were not made with the same prompts are listed as separate combinations, each with the media it covers.
+// Null when no output says (references, outputs from before the prompts were recorded).
+export function itemPromptsText(item: Pick<BatchItemView, 'outputs'>): string | null {
+  const combos: { prompts: MediaPrompts; types: Set<MediaType> }[] = [];
+  for (const output of item.outputs) {
+    const { prompts } = output;
+    if (prompts === undefined || prompts === null) continue;
+    const found = combos.find((combo) => combo.prompts.planner === prompts.planner && combo.prompts.render === prompts.render);
+    if (found === undefined) combos.push({ prompts, types: new Set([output.mediaType]) });
+    else found.types.add(output.mediaType);
+  }
+  if (combos.length === 0) return null;
+  const [only] = combos;
+  if (combos.length === 1 && only !== undefined) return `Prompts: ${promptsText(only.prompts)}`;
+  const parts = combos.map((combo) => {
+    const key = [...combo.types].sort().join(',');
+    return `${MEDIA_TYPES_LABEL[key] ?? 'outputs'}: ${promptsText(combo.prompts)}`;
+  });
+  return `Prompts: ${parts.join('; ')}`;
+}
+
+// The sentence in the viewer for the open output: "Generated with planner v2, image prompt global default".
+export function outputPromptsText(output: OutputPrompts): string | null {
+  const { prompts, mediaType } = output;
+  if (prompts === undefined || prompts === null) return null;
+  const render = `${mediaType} prompt ${promptVersionText(prompts.render)}`;
+  if (prompts.planner === null) return `Generated from the fallback plan with the ${render}`;
+  return `Generated with planner ${promptVersionText(prompts.planner)}, ${render}`;
+}
 
 // "2 of 3 ready", "1 of 3 ready, 1 failed".
 export function itemSummaryText(item: BatchItemView, expected: number): string {

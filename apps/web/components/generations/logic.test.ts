@@ -16,15 +16,18 @@ import {
   filterByTab,
   isBatchNotFound,
   isValidBatchId,
+  itemPromptsText,
   itemSummaryText,
   matchesTab,
   neighbourId,
   outputFilename,
+  outputPromptsText,
   outputsReady,
   outputsTotal,
   pendingTileLabel,
   percentText,
   productArchiveFiles,
+  promptVersionText,
   readyText,
   singleDownloadToast,
   viewerCounter,
@@ -202,6 +205,77 @@ describe('itemSummaryText', () => {
   it('never shows more ready than expected', () => {
     expect(itemSummaryText(item('Lamp', [media(1), media(2)]), 1)).toBe('2 of 2 ready');
     expect(itemSummaryText(item('Lamp', [media(1)]), 0)).toBe('1 ready');
+  });
+});
+
+describe('prompt versions of the outputs', () => {
+  const made = (planner: number | null, render: number) => ({ prompts: { planner, render } });
+  const video = { mediaType: 'video' as const };
+
+  it('names version 0 the global default', () => {
+    expect(promptVersionText(0)).toBe('global default');
+    expect(promptVersionText(3)).toBe('v3');
+  });
+
+  it('says global default when every output was made with the global prompts', () => {
+    const product = item('Lamp', [media(1, made(0, 0)), media(2, made(0, 0)), media(3, { ...made(0, 0), ...video })]);
+    expect(itemPromptsText(product)).toBe('Prompts: global default');
+  });
+
+  it('names the planner and the render version of an edited product', () => {
+    expect(itemPromptsText(item('Lamp', [media(1, made(2, 0)), media(2, made(2, 0))]))).toBe(
+      'Prompts: planner v2 · render global default',
+    );
+    expect(itemPromptsText(item('Lamp', [media(1, made(0, 3))]))).toBe('Prompts: planner global default · render v3');
+  });
+
+  it('says so when the plan came from the fallback plan', () => {
+    expect(itemPromptsText(item('Lamp', [media(1, made(null, 0))]))).toBe('Prompts: fallback plan · render global default');
+    expect(itemPromptsText(item('Lamp', [media(1, made(null, 4))]))).toBe('Prompts: fallback plan · render v4');
+  });
+
+  it('lists the distinct combinations with the media they cover when outputs disagree', () => {
+    const product = item('Lamp', [
+      media(1, made(2, 0)),
+      media(2, made(2, 0)),
+      media(3, { ...made(2, 1), ...video }),
+    ]);
+    expect(itemPromptsText(product)).toBe('Prompts: images: planner v2 · render global default; videos: planner v2 · render v1');
+  });
+
+  it('merges outputs of different media type that share a combination', () => {
+    const product = item('Lamp', [media(1, made(1, 1)), media(2, { ...made(1, 1), ...video }), media(3, made(0, 0))]);
+    expect(itemPromptsText(product)).toBe(
+      'Prompts: images and videos: planner v1 · render v1; images: global default',
+    );
+  });
+
+  it('is hidden when no output says which prompts made it', () => {
+    expect(itemPromptsText(item('Lamp', []))).toBeNull();
+    expect(itemPromptsText(item('Lamp', [media(1), media(2, { prompts: null })]))).toBeNull();
+  });
+
+  it('skips an output without prompts among the ones that have them', () => {
+    expect(itemPromptsText(item('Lamp', [media(1), media(2, made(1, 0))]))).toBe(
+      'Prompts: planner v1 · render global default',
+    );
+  });
+
+  it('describes the open output by its own media type', () => {
+    expect(outputPromptsText({ mediaType: 'image', ...made(2, 0) })).toBe(
+      'Generated with planner v2, image prompt global default',
+    );
+    expect(outputPromptsText({ mediaType: 'video', ...made(0, 5) })).toBe(
+      'Generated with planner global default, video prompt v5',
+    );
+    expect(outputPromptsText({ mediaType: 'image', ...made(null, 1) })).toBe(
+      'Generated from the fallback plan with the image prompt v1',
+    );
+  });
+
+  it('has nothing to say for an output without prompts', () => {
+    expect(outputPromptsText({ mediaType: 'image' })).toBeNull();
+    expect(outputPromptsText({ mediaType: 'image', prompts: null })).toBeNull();
   });
 });
 

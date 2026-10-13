@@ -38,6 +38,15 @@ export const batchConfigSnapshotSchema = z.object({
     image: z.string(),
     video: z.string(),
   }),
+  // The store's active prompt version for each prompt when the batch was created (0 is the global default). Batches
+  // created before per-store prompts have none, which means 0 (SPEC 12.6).
+  promptRefs: z
+    .object({
+      planner: z.number().int().min(0),
+      image: z.number().int().min(0),
+      video: z.number().int().min(0),
+    })
+    .default({ planner: 0, image: 0, video: 0 }),
 });
 
 export const batchCountsSchema = z.object({

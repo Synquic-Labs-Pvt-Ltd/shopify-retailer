@@ -32,6 +32,7 @@ async function main(): Promise<void> {
   void connectDbWithRetry(env.MONGODB_URI, logger, { signal: abort.signal, dbName: mongoDbName(env) }).then(async () => {
     await container.media.ensureIndexes();
     await container.batches.ensureIndexes();
+    await container.prompts.ensureIndexes();
     if (runsWorker && !abort.signal.aborted) {
       container.queue.runner.start();
       logger.info({ role: env.ROLE }, 'queue runner started');

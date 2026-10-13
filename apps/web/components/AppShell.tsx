@@ -9,6 +9,7 @@ import { OutsideAdmin } from './OutsideAdmin';
 export const NAV_LINKS = [
   { href: '/generations', label: 'Generations' },
   { href: '/products', label: 'Products' },
+  { href: '/prompts', label: 'Prompts' },
 ] as const;
 
 type Mode = 'unknown' | 'embedded' | 'dev' | 'outside';

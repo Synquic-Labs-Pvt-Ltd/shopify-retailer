@@ -38,6 +38,8 @@ export interface MediaAssetDoc {
   batchItemId?: Types.ObjectId;
   sourceJobId?: Types.ObjectId;
   shotTitle?: string;
+  // The prompt versions an output was generated with (0 is the global default). planner is null for a fallback plan.
+  prompts?: { planner: number | null; render: number };
   // Set once the output was added to its product (fileUpdate referencesToAdd).
   attachedAt?: Date;
   error?: { code?: string; message?: string };
@@ -77,6 +79,7 @@ const mediaAssetSchema = new Schema<MediaAssetDoc>(
     batchItemId: { type: objectId },
     sourceJobId: { type: objectId },
     shotTitle: { type: String },
+    prompts: { type: new Schema({ planner: { type: Number }, render: { type: Number } }, { _id: false }) },
     attachedAt: { type: Date },
     error: { code: { type: String }, message: { type: String } },
     readyAt: { type: Date },

@@ -2,6 +2,7 @@ import type { RequestHandler, Router } from 'express';
 import type {
   GenerationConfig,
   MediaObject,
+  MediaPrompts,
   MediaRole,
   MediaScope,
   MediaStatus,
@@ -55,6 +56,8 @@ export interface PersistOutputInput {
   filename: string;
   alt: string;
   shotTitle: string;
+  // The prompt versions that produced the output (SPEC 12.6).
+  prompts?: MediaPrompts;
 }
 
 export interface StorageDriver {

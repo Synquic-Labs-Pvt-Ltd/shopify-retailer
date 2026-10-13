@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MEDIA_ROLES, MEDIA_SCOPES, MEDIA_STATUSES, MEDIA_TYPES } from '../enums';
 import { isoDateTimeSchema, objectIdSchema, productGidSchema } from './common';
+import { mediaPromptsSchema } from './prompts';
 
 // Media object (SPEC 15 shapes).
 export const mediaObjectSchema = z.object({
@@ -19,6 +20,8 @@ export const mediaObjectSchema = z.object({
   shotTitle: z.string().nullable(),
   // An output that was added to its product in Shopify (POST /batches/:id/attach-media). Absent for references.
   attachedAt: isoDateTimeSchema.nullable().optional(),
+  // The prompt versions an output was generated with (SPEC 12.6). Absent for references and older outputs.
+  prompts: mediaPromptsSchema.nullable().optional(),
   createdAt: isoDateTimeSchema,
 });
 

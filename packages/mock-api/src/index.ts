@@ -1,7 +1,8 @@
-import { ApiError, type Api } from '@rs/shared';
+import { ApiError, type Api, type PromptsApi } from '@rs/shared';
 import { createMockBatchStore, type MockBatchStore } from './batchStore';
 import { ME, PRODUCTS, mockSession, toListItem } from './fixtures';
 import { createMockMediaStore, type MockMediaStore } from './mediaStore';
+import { createMockPromptStore, type MockPromptStore } from './promptStore';
 import { LATENCY_MS, delay } from './util';
 
 export { mockSession } from './fixtures';
@@ -11,6 +12,7 @@ export { mockSession } from './fixtures';
 //   fixtures.ts    45 products (42 with an image, mixed statuses), /me with the generation limits, the session
 //   mediaStore.ts  reference uploads: staged mock:// targets, processing polls, failure demos
 //   batchStore.ts  batches that advance with the clock, cancel and retry failed, admission limit
+//   promptStore.ts per-store prompt versions (web only): save, switch, reset to the global default
 // The product list leaves out products without an image, like the real backend, and filters by status.
 // Demo hooks: searching "error" fails the product list (error state), searching "zzz" finds nothing.
 
@@ -23,6 +25,7 @@ export interface MockApiOptions {
 
 interface MockState {
   media: MockMediaStore;
+  prompts: MockPromptStore;
   batches: MockBatchStore;
 }
 
@@ -32,12 +35,18 @@ declare global {
   var __rsMockApiState: MockState | undefined;
 }
 
+function createState(): MockState {
+  const prompts = createMockPromptStore();
+  // A batch records the prompt versions that are active when it is created.
+  return { media: createMockMediaStore(), prompts, batches: createMockBatchStore(() => prompts.activeVersions()) };
+}
+
 function mockState(): MockState {
-  globalThis.__rsMockApiState ??= { media: createMockMediaStore(), batches: createMockBatchStore() };
+  globalThis.__rsMockApiState ??= createState();
   return globalThis.__rsMockApiState;
 }
 
-// Forgets every upload and batch, so the next call starts from the seeded fixtures again.
+// Forgets every upload, batch and prompt version, so the next call starts from the seeded fixtures again.
 export function resetMockApi(): void {
   globalThis.__rsMockApiState = undefined;
 }
@@ -140,6 +149,37 @@ export function createMockApi(options: MockApiOptions = {}): Api {
         await wait(2);
         return batches().attachMedia(id, body);
       },
+    },
+  };
+}
+
+// Per-store prompt editing (SPEC 12.6) for the web app. It shares the reset and the lifetime of createMockApi's
+// state, so a batch created after an edit records the edited versions.
+export function createMockPromptsApi(options: MockApiOptions = {}): PromptsApi {
+  const latency = options.latencyMs ?? LATENCY_MS;
+  const wait = (): Promise<void> => delay(latency);
+  const prompts = (): MockPromptStore => mockState().prompts;
+
+  return {
+    list: async () => {
+      await wait();
+      return prompts().list();
+    },
+    get: async (name) => {
+      await wait();
+      return prompts().get(name);
+    },
+    getVersion: async (name, version) => {
+      await wait();
+      return prompts().getVersion(name, version);
+    },
+    save: async (name, body) => {
+      await wait();
+      return prompts().save(name, body);
+    },
+    activate: async (name, body) => {
+      await wait();
+      return prompts().activate(name, body);
     },
   };
 }

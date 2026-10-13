@@ -34,6 +34,7 @@ export function toMediaObject(doc: MediaAssetDoc): MediaObject {
     productGid: doc.productGid ?? null,
     shotTitle: doc.shotTitle ?? null,
     attachedAt: doc.attachedAt?.toISOString() ?? null,
+    prompts: doc.prompts === undefined || doc.prompts === null ? null : { planner: doc.prompts.planner ?? null, render: doc.prompts.render },
     createdAt: doc.createdAt.toISOString(),
   };
 }

@@ -2,6 +2,7 @@ import {
   ApiError,
   ERROR_CODES,
   ERROR_HTTP_STATUS,
+  activatePromptRequestSchema,
   attachMediaRequestSchema,
   batchListQuerySchema,
   createBatchRequestSchema,
@@ -9,10 +10,14 @@ import {
   mediaListQuerySchema,
   productGidParamsSchema,
   productListQuerySchema,
+  promptNameSchema,
+  promptVersionParamsSchema,
+  savePromptRequestSchema,
   uploadsRequestSchema,
   type Api,
   type ErrorCode,
   type ErrorEnvelope,
+  type PromptsApi,
 } from '@rs/shared';
 import type { ZodType } from 'zod';
 import { hasBearerToken } from '@/lib/bearer';
@@ -22,8 +27,9 @@ import { hasBearerToken } from '@/lib/bearer';
 
 export const API_PREFIX = '/api/v1/';
 
-export type MockApi = Omit<Api, 'auth'>;
-type Method = 'GET' | 'POST' | 'DELETE';
+// The prompt editing API is not part of the shared Api (the mobile app has no use for it), so it rides along.
+export type MockApi = Omit<Api, 'auth'> & { prompts: PromptsApi };
+type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 export interface MockRequest {
   method: string;
@@ -146,6 +152,32 @@ export const MOCK_ROUTES: readonly Route[] = [
     pattern: 'batches/:id/attach-media',
     handle: async ({ api, params, body }) =>
       ok(await api.batches.attachMedia(parse(idParamsSchema, params).id, parse(attachMediaRequestSchema, body ?? {}))),
+  },
+  { method: 'GET', pattern: 'prompts', handle: async ({ api }) => ok(await api.prompts.list()) },
+  {
+    method: 'GET',
+    pattern: 'prompts/:name',
+    handle: async ({ api, params }) => ok(await api.prompts.get(parse(promptNameSchema, params.name))),
+  },
+  {
+    method: 'GET',
+    pattern: 'prompts/:name/versions/:version',
+    handle: async ({ api, params }) => {
+      const { name, version } = parse(promptVersionParamsSchema, params);
+      return ok(await api.prompts.getVersion(name, version));
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: 'prompts/:name',
+    handle: async ({ api, params, body }) =>
+      ok(await api.prompts.save(parse(promptNameSchema, params.name), parse(savePromptRequestSchema, body))),
+  },
+  {
+    method: 'POST',
+    pattern: 'prompts/:name/activate',
+    handle: async ({ api, params, body }) =>
+      ok(await api.prompts.activate(parse(promptNameSchema, params.name), parse(activatePromptRequestSchema, body))),
   },
 ];
 

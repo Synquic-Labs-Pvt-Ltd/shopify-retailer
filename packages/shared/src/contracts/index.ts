@@ -6,3 +6,4 @@ export * from './products';
 export * from './media';
 export * from './batches';
 export * from './health';
+export * from './prompts';

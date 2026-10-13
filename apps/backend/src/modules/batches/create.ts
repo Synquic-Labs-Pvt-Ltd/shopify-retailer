@@ -16,12 +16,16 @@ import { isDuplicateKeyError, toSummary } from './mapper';
 import { BatchItemModel, BatchModel, type BatchDoc, type BatchItemDoc } from './models';
 import { allReferenceIds, assertUsableReferences, resolveRequest, type ResolvedProduct } from './references';
 
-type CreateDeps = Pick<BatchesModuleDeps, 'getConfig' | 'getPromptVersions' | 'queue' | 'catalog' | 'media' | 'shops' | 'logger'> & {
+type CreateDeps = Pick<BatchesModuleDeps, 'getConfig' | 'getPromptVersions' | 'getPromptRefs' | 'queue' | 'catalog' | 'media' | 'shops' | 'logger'> & {
   now: () => Date;
 };
 
 // The generation settings that apply to this batch for good (SPEC 14.7). Lanes and queue settings stay live.
-export function freezeConfig(config: GenerationConfig, promptVersions: BatchConfigSnapshot['promptVersions']): BatchConfigSnapshot {
+export function freezeConfig(
+  config: GenerationConfig,
+  promptVersions: BatchConfigSnapshot['promptVersions'],
+  promptRefs: BatchConfigSnapshot['promptRefs'] = { planner: 0, image: 0, video: 0 },
+): BatchConfigSnapshot {
   return structuredClone({
     outputs: config.outputs,
     provider: config.provider,
@@ -30,6 +34,7 @@ export function freezeConfig(config: GenerationConfig, promptVersions: BatchConf
     image: config.image,
     video: config.video,
     promptVersions: { planner: promptVersions.planner, image: promptVersions.image, video: promptVersions.video },
+    promptRefs: { planner: promptRefs.planner, image: promptRefs.image, video: promptRefs.video },
   });
 }
 
@@ -108,7 +113,8 @@ export function createBatchCreator(deps: CreateDeps) {
       if (!snapshots.has(product.productGid)) throw AppError.notFound(`Product ${product.productGid} was not found`);
     }
 
-    const snapshot = freezeConfig(config, deps.getPromptVersions());
+    const promptRefs = (await deps.getPromptRefs?.(actor.shopId)) ?? { planner: 0, image: 0, video: 0 };
+    const snapshot = freezeConfig(config, deps.getPromptVersions(), promptRefs);
     const shopId = new Types.ObjectId(actor.shopId);
     let batch: BatchDoc;
     try {

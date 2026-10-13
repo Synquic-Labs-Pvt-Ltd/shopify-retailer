@@ -65,6 +65,22 @@ async function outputRecords() {
 }
 
 describe('persistOutput', () => {
+  it('records which prompt versions produced the output and returns them on the media object', async () => {
+    const withPrompts = await persist(imageOutput({ prompts: { planner: 2, render: 3 } }));
+    expect(withPrompts.prompts).toEqual({ planner: 2, render: 3 });
+    expect(mediaObjectSchema.parse(withPrompts)).toEqual(withPrompts);
+    const [stored] = await kit.media.service.getObjects(SHOP_ID, [withPrompts.id]);
+    expect(stored?.prompts).toEqual({ planner: 2, render: 3 });
+
+    // A fallback plan used no planner prompt.
+    const fallback = await persist(imageOutput({ prompts: { planner: null, render: 0 } }));
+    expect(fallback.prompts).toEqual({ planner: null, render: 0 });
+
+    // An output stored without the field (older records) reads back as null, never as a made-up version.
+    const legacy = await persist(imageOutput());
+    expect(legacy.prompts).toBeNull();
+  });
+
   it('uploads an image through staged upload, multipart POST and fileCreate, then waits for READY', async () => {
     const input = imageOutput();
     const startedAt = kit.clock.now().getTime();

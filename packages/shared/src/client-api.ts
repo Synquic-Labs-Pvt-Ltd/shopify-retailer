@@ -1,4 +1,5 @@
 import type {
+  ActivatePromptRequest,
   AttachMediaRequest,
   AttachMediaResponse,
   AuthExchangeRequest,
@@ -14,6 +15,11 @@ import type {
   MediaListResponse,
   MediaObject,
   PaginationParams,
+  PromptDetail,
+  PromptListResponse,
+  PromptName,
+  PromptVersionText,
+  SavePromptRequest,
   ProductDetail,
   ProductListParams,
   ProductListResponse,
@@ -65,4 +71,16 @@ export interface Api {
     // Adds the ready outputs to the Shopify products they were made for.
     attachMedia(id: string, body?: AttachMediaRequest): Promise<AttachMediaResponse>;
   };
+}
+
+// Per-store prompt editing (SPEC 12.6). The embedded web app implements it; the mobile app does not use it, so it
+// is not part of Api.
+export interface PromptsApi {
+  list(): Promise<PromptListResponse>;
+  get(name: PromptName): Promise<PromptDetail>;
+  getVersion(name: PromptName, version: number): Promise<PromptVersionText>;
+  // Saves the text as the next version and makes it the active one.
+  save(name: PromptName, body: SavePromptRequest): Promise<PromptDetail>;
+  // Makes a saved version active again. Version 0 is the global default (a reset).
+  activate(name: PromptName, body: ActivatePromptRequest): Promise<PromptDetail>;
 }

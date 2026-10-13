@@ -18,6 +18,8 @@ import {
   NO_PRODUCT_IMAGES,
   planCounts,
   productImageSources,
+  promptAudit,
+  promptRefOf,
   referenceSources,
   splitReferences,
   type JobRun,
@@ -82,9 +84,9 @@ async function runPlan(rt: Runtime, job: QueueJob, signal: AbortSignal): Promise
   if (productImageSources(ctx).length === 0) return NO_PRODUCT_IMAGES;
 
   const counts = planCounts(ctx.config);
-  const template = rt.getPrompt('planner.system');
+  const template = await rt.resolvePrompt(ctx.shopId, 'planner.system', promptRefOf(ctx.config, 'planner'));
   const systemPrompt = renderPlannerSystemPrompt(template.text, counts, config, ctx.styleMode);
-  const audit = { promptVersion: template.version, renderedPrompt: systemPrompt };
+  const audit = promptAudit(template, systemPrompt);
   const provider = rt.ai.getProvider(ctx.config.provider);
 
   try {

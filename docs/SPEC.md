@@ -495,6 +495,20 @@ The negativePrompt comes from config video.negativePrompt. Default: "text, capti
 - Video shot: the same setting with "slow push-in toward the product".
 - All shots use people "none".
 
+### 12.6 Per-store prompts and versions
+
+The three templates above are the **global defaults**. Every store can edit its own copy; editing never changes a global default, and a store can always go back to it.
+
+- **Version 0 is the global default.** It has no stored document: it is always the current file in config/prompts (hot reloaded). A store's own edits are numbered versions 1, 2, 3, ... per prompt.
+- **Every save is a new version.** PUT /prompts/:name stores the text as the next number (reserved atomically, so parallel saves never collide), makes it the active version and keeps all earlier ones. Versions are immutable. Saving the text that is already active adds nothing. A prompt can have at most 200 versions per store.
+- **Going back and forth** is an activation: POST /prompts/:name/activate {version} makes any saved version active again without creating one. `version: 0` resets the store to the global default; its custom versions stay in the history and saving continues from the highest number.
+- **Validation before storing.** The text must contain the required placeholders of its prompt and no unknown or malformed ones (PROMPT_DEFINITIONS and validatePromptText in @rs/shared; an unknown placeholder would crash every job that used it). Rejections are 400 validation_failed with `details.errors`. Limit 20,000 characters.
+- **Multi-tenant.** Every prompt row carries shopId and every route is scoped by the authenticated shop; a store only reads and edits its own. Any authenticated user of the shop may edit (the app has no staff roles). The rows are deleted on shop/redact.
+- **Frozen per batch.** At creation a batch snapshots the store's active version of each prompt (configSnapshot.promptRefs: planner, image, video; absent in older batches, which means 0). Its jobs and their retries use exactly those versions, so editing or resetting a prompt never changes a batch in flight.
+- **Tracking.** Every job records promptVersion (the 12-character hash of the template text), promptRevision (the store version, 0 = global default) and renderedPrompt. Every output media asset records `prompts: { planner, render }`: the planner version that planned it (null when the deterministic fallback plan was used) and the image or video prompt version that rendered it. Both are returned on the media object.
+- **Collections:** prompt_versions {shopId, name, version, text, chars, hash, note, createdByUserId, createdAt} unique on (shopId, name, version); prompt_states {shopId, name, activeVersion, latestVersion, updatedAt} unique on (shopId, name).
+- **What stays outside the editable text:** the safer-presentation notes (SAFE_IMAGE_NOTE, SAFE_VIDEO_NOTE), the STYLE DIRECTION paragraphs, the product and reference labels and the fallback plan are code, not prompts, and are applied around any version.
+
 ## 13. Generation config (apps/backend/config/generation.config.json)
 
 **Loading**
@@ -804,10 +818,15 @@ Fields:
 | POST /api/v1/batches/:id/cancel | none | batch summary |
 | POST /api/v1/batches/:id/retry-failed | none | batch summary |
 | POST /api/v1/batches/:id/attach-media | optional itemIds | per item: itemId, productGid, attached, alreadyAttached, failed, error; totals |
+| GET /api/v1/prompts | none | items: name, title, description, placeholders, activeVersion, latestVersion, isCustom, updatedAt |
+| GET /api/v1/prompts/:name | none | the summary plus text (active), globalText and versions (newest first, version 0 last) |
+| GET /api/v1/prompts/:name/versions/:version | none | one version with its text; version 0 is the global default |
+| PUT /api/v1/prompts/:name | text, optional note | the detail after saving the next version and activating it; 400 validation_failed with details.errors; 429 shop_limit at 200 versions |
+| POST /api/v1/prompts/:name/activate | version (0 resets to the global default) | the detail; 404 for an unknown version |
 | GET /health | none | ok, db, worker lastTickAt, paused lanes |
 
 Shapes:
-- Media object: id, role, mediaType, status, url, previewUrl, width, height, durationSec, filename, scope, productGid, shotTitle, attachedAt (outputs added to their product), createdAt.
+- Media object: id, role, mediaType, status, url, previewUrl, width, height, durationSec, filename, scope, productGid, shotTitle, attachedAt (outputs added to their product), prompts (planner and render prompt versions an output was generated with), createdAt.
 - Batch summary: id, status, counts, createdAt, finishedAt, coverImageUrl (the first product image), configSnapshot.outputs.
 
 ## 16. Mobile app

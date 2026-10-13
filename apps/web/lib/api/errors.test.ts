@@ -1,6 +1,6 @@
 import { ApiError, ERROR_CODES, type ApiErrorCode } from '@rs/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { errorMessage, unresolvedProductGids } from './errors';
+import { errorMessage, unresolvedProductGids, validationErrors } from './errors';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,6 +58,31 @@ describe('errorMessage', () => {
   it('has a sentence for every error code', () => {
     const codes: ApiErrorCode[] = [...ERROR_CODES, 'network_error', 'timeout', 'service_unavailable', 'invalid_response'];
     for (const code of codes) expect(errorMessage(error(code), 'Fallback.')).not.toBe('');
+  });
+});
+
+describe('validationErrors', () => {
+  it('reads the list of a validation_failed error', () => {
+    const errors = ['Missing required placeholder {{shot.prompt}}.', 'The prompt is too long.'];
+    expect(validationErrors(error('validation_failed', 'x', { errors }))).toEqual(errors);
+  });
+
+  it('keeps only the non-empty strings of the list', () => {
+    expect(validationErrors(error('validation_failed', 'x', { errors: ['a', 3, null, '  ', 'b'] }))).toEqual(['a', 'b']);
+  });
+
+  it('is null when there is no usable list', () => {
+    expect(validationErrors(error('validation_failed'))).toBeNull();
+    expect(validationErrors(error('validation_failed', 'x', 'garbage'))).toBeNull();
+    expect(validationErrors(error('validation_failed', 'x', { errors: [] }))).toBeNull();
+    expect(validationErrors(error('validation_failed', 'x', { errors: 'nope' }))).toBeNull();
+    expect(validationErrors(error('validation_failed', 'x', { issues: [{ message: 'y' }] }))).toBeNull();
+  });
+
+  it('is null for any other error', () => {
+    expect(validationErrors(error('shop_limit', 'x', { errors: ['a'] }))).toBeNull();
+    expect(validationErrors(new Error('x'))).toBeNull();
+    expect(validationErrors(undefined)).toBeNull();
   });
 });
 

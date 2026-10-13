@@ -1,10 +1,11 @@
-import type { BatchConfigSnapshot, CreativePlan, GenerationConfig, MediaObject, PlanCounts, ProductSnapshot } from '@rs/shared';
+import type { BatchConfigSnapshot, CreativePlan, GenerationConfig, MediaObject, MediaPrompts, PlanCounts, PlanSource, ProductSnapshot, PromptName } from '@rs/shared';
 import { AppError } from '../../core/errors';
-import type { LoadedPrompt, PromptName } from '../../core/config';
+import type { LoadedPrompt } from '../../core/config';
 import type { Logger } from '../../core/logger';
 import { buildFallbackPlan, type AiService, type ImageInput } from '../ai';
 import type { BatchItemContext, BatchesService } from '../batches';
 import { StorageUploadError, type MediaAssetRecord, type MediaService } from '../media';
+import type { PromptRefs, ResolvedPrompt } from '../prompts';
 import type { JobOutcome, QueueJob } from '../queue';
 import { DownloadError, downloadBytes } from './download';
 import { failure } from './outcomes';
@@ -20,6 +21,8 @@ export interface GenerationDeps {
   // batch's frozen snapshot.
   getConfig: () => GenerationConfig;
   getPrompt: (name: PromptName) => LoadedPrompt;
+  // The prompt a batch froze for a store (SPEC 12.6). Defaults to the global default of getPrompt.
+  resolvePrompt?: (shopId: string, name: PromptName, version: number) => Promise<ResolvedPrompt>;
   logger: Logger;
   // Downloads of product and reference bytes. Defaults to the global fetch.
   fetchImpl?: typeof fetch;
@@ -32,6 +35,7 @@ export interface Runtime {
   media: Pick<MediaService, 'storage'>;
   getConfig: () => GenerationConfig;
   getPrompt: (name: PromptName) => LoadedPrompt;
+  resolvePrompt: (shopId: string, name: PromptName, version: number) => Promise<ResolvedPrompt>;
   logger: Logger;
   fetchImpl: typeof fetch;
   now: () => Date;
@@ -44,6 +48,12 @@ export function createRuntime(deps: GenerationDeps): Runtime {
     media: deps.media,
     getConfig: deps.getConfig,
     getPrompt: deps.getPrompt,
+    resolvePrompt:
+      deps.resolvePrompt ??
+      (async (_shopId, name) => {
+        const prompt = deps.getPrompt(name);
+        return { name, text: prompt.text, hash: prompt.version, version: 0, source: 'global' };
+      }),
     logger: deps.logger.child({ module: 'generation' }),
     fetchImpl: deps.fetchImpl ?? fetch,
     now: deps.now ?? (() => new Date()),
@@ -89,6 +99,16 @@ export async function beginJob(rt: Runtime, job: QueueJob, options: { references
 }
 
 export const CANCELLED: JobOutcome = { kind: 'cancelled' };
+
+// The version of a prompt a batch froze at creation. Batches from before per-store prompts have none: version 0.
+export function promptRefOf(config: BatchConfigSnapshot, key: keyof PromptRefs): number {
+  return config.promptRefs?.[key] ?? 0;
+}
+
+// What the audit trail of a job records about the prompt it rendered.
+export function promptAudit(prompt: ResolvedPrompt, renderedPrompt: string) {
+  return { promptVersion: prompt.hash, promptRevision: prompt.version, renderedPrompt };
+}
 
 export const NO_PRODUCT_IMAGES: JobOutcome = {
   kind: 'failed',
@@ -152,11 +172,21 @@ export async function loadImages(rt: Runtime, sources: readonly MediaSource[], s
 
 // A missing plan means the plan job failed or was cancelled: build the fallback (SPEC 10.2) and store it.
 // First write wins, so a plan another job stored meanwhile is the one returned.
-export async function ensurePlan(rt: Runtime, run: JobRun): Promise<CreativePlan> {
-  if (run.ctx.creativePlan !== null) return run.ctx.creativePlan;
+export async function ensurePlanWithSource(rt: Runtime, run: JobRun): Promise<{ plan: CreativePlan; source: PlanSource }> {
+  if (run.ctx.creativePlan !== null) return { plan: run.ctx.creativePlan, source: run.ctx.planSource ?? 'planner' };
   const fallback = buildFallbackPlan(run.ctx.productSnapshot, planCounts(run.ctx.config), run.config, run.ctx.styleMode);
   const stored = await rt.batches.setCreativePlan(run.ctx.shopId, run.ctx.itemId, fallback, 'fallback');
-  return stored.plan;
+  return { plan: stored.plan, source: stored.source };
+}
+
+export async function ensurePlan(rt: Runtime, run: JobRun): Promise<CreativePlan> {
+  return (await ensurePlanWithSource(rt, run)).plan;
+}
+
+// The prompt versions behind an output: the render prompt of its job and, when a planner prompt made the plan, that
+// one too (a fallback plan used none).
+export function outputPrompts(config: BatchConfigSnapshot, planSource: PlanSource, render: 'image' | 'video'): MediaPrompts {
+  return { planner: planSource === 'planner' ? promptRefOf(config, 'planner') : null, render: promptRefOf(config, render) };
 }
 
 export function downloadFailed(err: unknown): JobOutcome | null {
@@ -185,6 +215,7 @@ export interface OutputToPersist {
   mimeType: string;
   bytes: Uint8Array;
   shotTitle: string;
+  prompts: MediaPrompts;
 }
 
 export type PersistResult = { ok: true; media: MediaObject } | { ok: false; outcome: Extract<JobOutcome, { kind: 'retry' }> };
@@ -207,6 +238,7 @@ export async function persistOutput(rt: Runtime, output: OutputToPersist): Promi
       filename: outputFilename(ctx, output.kind, job.outputIndex ?? 0, output.mimeType),
       alt: `${ctx.productSnapshot.title}: ${output.shotTitle}`,
       shotTitle: output.shotTitle,
+      prompts: output.prompts,
     });
     return { ok: true, media };
   } catch (err) {

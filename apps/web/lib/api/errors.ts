@@ -49,6 +49,18 @@ export function errorMessage(error: unknown, fallback: string = FALLBACK_MESSAGE
   }
 }
 
+// The problems a 400 validation_failed response lists in details.errors (a rejected prompt, SPEC 12.6), or null when
+// the error is another one or carries no list. errorMessage only has the first of them, in the message.
+export function validationErrors(error: unknown): string[] | null {
+  if (!(error instanceof ApiError) || error.code !== 'validation_failed') return null;
+  const { details } = error;
+  if (typeof details !== 'object' || details === null || !('errors' in details) || !Array.isArray(details.errors)) {
+    return null;
+  }
+  const errors = details.errors.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '');
+  return errors.length > 0 ? errors : null;
+}
+
 // The product GIDs a 422 references_required response names (SPEC 9), or null for any other error.
 export function unresolvedProductGids(error: unknown): string[] | null {
   if (!(error instanceof ApiError) || error.code !== 'references_required') return null;

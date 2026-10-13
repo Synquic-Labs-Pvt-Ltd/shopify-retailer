@@ -1,5 +1,6 @@
-import { createMockApi, resetMockApi } from '@rs/mock-api';
+import { createMockApi, createMockPromptsApi, resetMockApi } from '@rs/mock-api';
 import {
+  PROMPT_MAX_VERSIONS,
   attachMediaResponseSchema,
   batchDetailSchema,
   batchListResponseSchema,
@@ -10,12 +11,16 @@ import {
   meResponseSchema,
   productDetailSchema,
   productListResponseSchema,
+  promptDetailSchema,
+  promptListResponseSchema,
+  promptVersionTextSchema,
   referencesRequiredDetailsSchema,
   uploadsResponseSchema,
   type BatchDetail,
+  type PromptName,
 } from '@rs/shared';
 import type { ZodType } from 'zod';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasBearerToken } from '@/lib/bearer';
 import { MOCK_ROUTES, handleMockRequest, type MockApi, type MockRequest, type MockResponse } from './routes';
 
@@ -26,7 +31,7 @@ const KEY = '5b1d1f0e-0d6e-4c4e-9a53-3f6c8d9b2a11';
 let api: MockApi;
 beforeEach(() => {
   resetMockApi();
-  api = createMockApi({ latencyMs: 0 });
+  api = { ...createMockApi({ latencyMs: 0 }), prompts: createMockPromptsApi({ latencyMs: 0 }) };
 });
 afterEach(() => resetMockApi());
 
@@ -66,6 +71,12 @@ async function createMediaId(): Promise<string> {
     body: { files: [{ clientId: 'c1', filename: 'a.jpg', mimeType: 'image/jpeg', fileSize: 10, scope: 'common' }] },
   });
   return uploadsResponseSchema.parse(response.body).targets[0]?.mediaId ?? '';
+}
+
+// A valid edit of the global text of a prompt: the same placeholders and one more line.
+async function editedText(name: PromptName, line = 'Keep the tone calm.'): Promise<string> {
+  const detail = promptDetailSchema.parse((await call('GET', `/api/v1/prompts/${name}`)).body);
+  return `${detail.globalText}\n${line}`;
 }
 
 interface RouteCase {
@@ -149,6 +160,31 @@ const CASES: RouteCase[] = [
     status: 200,
     schema: attachMediaResponseSchema,
     run: async () => call('POST', `/api/v1/batches/${await createBatchId()}/attach-media`),
+  },
+  { route: 'GET prompts', status: 200, schema: promptListResponseSchema, run: () => call('GET', '/api/v1/prompts') },
+  {
+    route: 'GET prompts/:name',
+    status: 200,
+    schema: promptDetailSchema,
+    run: () => call('GET', '/api/v1/prompts/planner.system'),
+  },
+  {
+    route: 'GET prompts/:name/versions/:version',
+    status: 200,
+    schema: promptVersionTextSchema,
+    run: () => call('GET', '/api/v1/prompts/image.user/versions/0'),
+  },
+  {
+    route: 'PUT prompts/:name',
+    status: 200,
+    schema: promptDetailSchema,
+    run: async () => call('PUT', '/api/v1/prompts/video.user', { body: { text: await editedText('video.user') } }),
+  },
+  {
+    route: 'POST prompts/:name/activate',
+    status: 200,
+    schema: promptDetailSchema,
+    run: () => call('POST', '/api/v1/prompts/image.user/activate', { body: { version: 0 } }),
   },
 ];
 
@@ -318,5 +354,112 @@ describe('styleMode pass-through', () => {
       422,
       'references_required',
     );
+  });
+});
+
+describe('prompts', () => {
+  const detailOf = async (name: PromptName) =>
+    promptDetailSchema.parse((await call('GET', `/api/v1/prompts/${name}`)).body);
+
+  it('lists the prompts on the global default and reads a prompt by its dotted name', async () => {
+    const list = promptListResponseSchema.parse((await call('GET', '/api/v1/prompts')).body);
+    expect(list.items.map((item) => [item.name, item.activeVersion])).toEqual([
+      ['planner.system', 0],
+      ['image.user', 0],
+      ['video.user', 0],
+    ]);
+    // The dot may arrive encoded or raw.
+    const raw = await call('GET', '/api/v1/prompts/planner.system');
+    const encoded = await call('GET', `/api/v1/prompts/${encodeURIComponent('planner.system')}`);
+    expect(raw.body).toEqual(encoded.body);
+  });
+
+  it('saves a version over PUT, which shows up in the detail and the list', async () => {
+    const text = await editedText('image.user');
+    const saved = promptDetailSchema.parse(
+      (await call('PUT', '/api/v1/prompts/image.user', { body: { text, note: 'calmer' } })).body,
+    );
+    expect(saved).toMatchObject({ activeVersion: 1, latestVersion: 1, isCustom: true, text });
+    expect(saved.versions[0]).toMatchObject({ version: 1, note: 'calmer', active: true });
+
+    expect(await detailOf('image.user')).toEqual(saved);
+    const list = promptListResponseSchema.parse((await call('GET', '/api/v1/prompts')).body);
+    expect(list.items.find((item) => item.name === 'image.user')).toMatchObject({ activeVersion: 1, isCustom: true });
+  });
+
+  it('switches versions and resets to the global default over POST activate', async () => {
+    await call('PUT', '/api/v1/prompts/video.user', { body: { text: await editedText('video.user', 'One.') } });
+    await call('PUT', '/api/v1/prompts/video.user', { body: { text: await editedText('video.user', 'Two.') } });
+
+    const first = await call('POST', '/api/v1/prompts/video.user/activate', { body: { version: 1 } });
+    expect(promptDetailSchema.parse(first.body)).toMatchObject({ activeVersion: 1, latestVersion: 2 });
+
+    const reset = await call('POST', '/api/v1/prompts/video.user/activate', { body: { version: 0 } });
+    expect(promptDetailSchema.parse(reset.body)).toMatchObject({ activeVersion: 0, latestVersion: 2, isCustom: false });
+
+    const version = await call('GET', '/api/v1/prompts/video.user/versions/2');
+    expect(promptVersionTextSchema.parse(version.body)).toMatchObject({ version: 2, active: false });
+  });
+
+  it('answers 400 validation_failed with details.errors for a prompt that breaks the rules', async () => {
+    const response = await expectError(
+      call('PUT', '/api/v1/prompts/video.user', { body: { text: 'No placeholders at all {{unknown}}' } }),
+      400,
+      'validation_failed',
+    );
+    const { error } = errorEnvelopeSchema.parse(response.body);
+    const details = error.details as { errors: string[] };
+    expect(details.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Unknown placeholder {{unknown}}'),
+        expect.stringContaining('Missing required placeholder {{shot.prompt}}'),
+      ]),
+    );
+    expect((await detailOf('video.user')).activeVersion).toBe(0);
+  });
+
+  it('answers 400 for a malformed body, an unknown prompt or a bad version', async () => {
+    await expectError(call('PUT', '/api/v1/prompts/video.user', { body: {} }), 400, 'validation_failed');
+    await expectError(call('PUT', '/api/v1/prompts/video.user'), 400, 'validation_failed');
+    await expectError(call('POST', '/api/v1/prompts/video.user/activate', { body: { version: -1 } }), 400, 'validation_failed');
+    await expectError(call('GET', '/api/v1/prompts/nope'), 400, 'validation_failed');
+    await expectError(call('GET', '/api/v1/prompts/video.user/versions/abc'), 400, 'validation_failed');
+  });
+
+  it('answers 404 for a version that was never saved', async () => {
+    await expectError(call('GET', '/api/v1/prompts/video.user/versions/3'), 404, 'not_found');
+    await expectError(call('POST', '/api/v1/prompts/video.user/activate', { body: { version: 3 } }), 404, 'not_found');
+  });
+
+  it('answers 429 shop_limit when the version cap is hit', async () => {
+    for (let index = 1; index <= PROMPT_MAX_VERSIONS; index += 1) {
+      const text = await editedText('video.user', `Variant ${index}.`);
+      expect((await call('PUT', '/api/v1/prompts/video.user', { body: { text } })).status).toBe(200);
+    }
+    await expectError(
+      call('PUT', '/api/v1/prompts/video.user', { body: { text: await editedText('video.user', 'Too many.') } }),
+      429,
+      'shop_limit',
+    );
+  });
+
+  it('requires the session token like every other route', async () => {
+    await expectError(call('GET', '/api/v1/prompts', { authorization: null }), 401, 'unauthorized');
+    await expectError(call('PUT', '/api/v1/prompts/video.user', { authorization: null, body: {} }), 401, 'unauthorized');
+  });
+
+  it('puts the versions in use on the outputs of a batch created after an edit', async () => {
+    vi.useFakeTimers();
+    try {
+      await call('PUT', '/api/v1/prompts/planner.system', { body: { text: await editedText('planner.system') } });
+      const id = await createBatchId();
+      vi.advanceTimersByTime(10_000);
+      const detail = batchDetailSchema.parse((await call('GET', `/api/v1/batches/${id}`)).body);
+      const outputs = detail.items.flatMap((item) => item.outputs);
+      expect(outputs.length).toBeGreaterThan(0);
+      for (const output of outputs) expect(output.prompts).toEqual({ planner: 1, render: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

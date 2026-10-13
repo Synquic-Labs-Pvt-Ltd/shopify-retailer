@@ -10,7 +10,7 @@ import {
   type RetryRule,
 } from './retry';
 
-type HttpMethod = 'GET' | 'POST' | 'DELETE';
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 type QueryValue = string | number | undefined;
 
 // One attempt waits at most this long for the whole answer (headers and body).

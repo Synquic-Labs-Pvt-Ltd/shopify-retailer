@@ -15,4 +15,5 @@ export {
   BATCH_LIST_POLL_MS,
   BATCH_DETAIL_POLL_MS,
 } from './batches';
+export { usePrompts, usePrompt, usePromptVersion, useSavePrompt, useActivatePrompt } from './prompts';
 export { useDocumentVisible } from './visibility';

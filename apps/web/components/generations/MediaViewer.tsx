@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { BatchItemView } from '@rs/shared';
 import { usableOutputs } from '@/lib/batch/outputs';
 import type { DownloadItem } from '@/lib/download';
-import { arrowKeyDelta, neighbourId, outputFilename, viewerCounter, viewerIndex } from './logic';
+import { arrowKeyDelta, neighbourId, outputFilename, outputPromptsText, viewerCounter, viewerIndex } from './logic';
 import { useModalOverlay, type ModalElement } from './overlay';
 import styles from './generations.module.css';
 
@@ -55,6 +55,7 @@ export function MediaViewer({ item, mediaId, saving, onSelect, onClose, onDownlo
 
   const isVideo = current?.mediaType === 'video';
   const imageAlt = current?.shotTitle ?? item?.title ?? '';
+  const promptsText = current === undefined ? null : outputPromptsText(current);
   return (
     <s-modal ref={modalRef} id={VIEWER_MODAL_ID} heading={item?.title ?? 'Preview'} size="large-100">
       <div className={styles.stage}>
@@ -95,6 +96,7 @@ export function MediaViewer({ item, mediaId, saving, onSelect, onClose, onDownlo
           }}
         />
       </div>
+      {promptsText === null ? null : <p className={styles.promptInfo}>{promptsText}</p>}
       <s-button
         slot="primary-action"
         variant="primary"
