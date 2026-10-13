@@ -132,9 +132,21 @@ describe('plan response schema', () => {
   it('declares every field of the video shot, including cameraMove and subjectAction', () => {
     const props = buildPlanResponseSchema({ imageCount: 1, videoCount: 1 }).properties as Record<string, { items?: { properties?: Record<string, unknown> } }>;
     expect(Object.keys(props.imageShots?.items?.properties ?? {})).toEqual(['shotId', 'title', 'scene', 'camera', 'lighting', 'people', 'prompt', 'negative']);
+    // The camera move and the action are decided before the prompt that brings the shot together.
     expect(Object.keys(props.videoShots?.items?.properties ?? {})).toEqual([
-      'shotId', 'title', 'scene', 'camera', 'lighting', 'people', 'prompt', 'negative', 'cameraMove', 'subjectAction',
+      'shotId', 'title', 'scene', 'camera', 'lighting', 'people', 'cameraMove', 'subjectAction', 'prompt', 'negative',
     ]);
+  });
+
+  it('sends a description for the fields that need guidance', () => {
+    const schema = buildPlanResponseSchema({ imageCount: 1, videoCount: 1 });
+    type Described = { properties?: Record<string, { description?: string }>; items?: { properties?: Record<string, { description?: string }> } };
+    const props = schema.properties as Record<string, Described>;
+    expect(props.product?.properties?.mustPreserve?.description).toContain('garment checklist');
+    expect(props.imageShots?.items?.properties?.prompt?.description).toContain('60 to 140 words');
+    expect(props.imageShots?.items?.properties?.camera?.description).toContain('deep focus');
+    expect(props.videoShots?.items?.properties?.cameraMove?.description).toContain('Chosen before the prompt');
+    for (const field of Object.values(props.referenceStyle?.properties ?? {})) expect(field.description).toBeTruthy();
   });
 
   it('describes the same fields the zod plan schema accepts', () => {

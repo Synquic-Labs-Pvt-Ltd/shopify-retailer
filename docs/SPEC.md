@@ -304,7 +304,9 @@ The web app (apps/web) runs inside the Shopify admin and does not use the redire
 
 ### 10.3 Image job
 - Picks shot imageShots[outputIndex] from the plan.
-- Model input order: a text label "PRODUCT IMAGE k" before each product image, then a text label "STYLE REFERENCE k" before each style reference image, then the rendered image prompt (section 12.3).
+- Model input order: a text label "STYLE REFERENCE k of n" before each style reference image (the scene to recreate), then a text label "PRODUCT IMAGE k of n" before each product image (the garment to put in it), then the rendered image prompt (section 12.3). The style reference goes first because the model treats the first image as the base it edits: with the product photo first it re-rendered that photo and dropped the scene.
+- Input budget: the image model documents 3 input images per prompt and uses later ones unreliably, so ai.image.maxInputImages (3) caps the total and ai.image.maxStyleReferences (1) caps the style references; the style reference keeps its place and the product images (featured first, then the product's own uploads, then the rest) fill what remains, at least one. With no style reference the product images take all 3.
+- When a style reference is sent, the prompt ends with the scene brief (SCENE_REFERENCE_NOTE): take the outfit from the product images and place it on a different adult model inside the scene of STYLE REFERENCE 1. Every image prompt also ends with the focus note (deep focus, sharp background).
 - Generation config: imageConfig aspectRatio and imageSize from config. Response modalities are image and text. Request JPEG output where the provider supports it (Vertex imageOutputOptions); otherwise store what is returned.
 - Takes the first inline image part of the first candidate.
   - No image part and finishReason is a safety reason: error safety_blocked.
@@ -508,6 +510,33 @@ The three templates above are the **global defaults**. Every store can edit its 
 - **Tracking.** Every job records promptVersion (the 12-character hash of the template text), promptRevision (the store version, 0 = global default) and renderedPrompt. Every output media asset records `prompts: { planner, render }`: the planner version that planned it (null when the deterministic fallback plan was used) and the image or video prompt version that rendered it. Both are returned on the media object.
 - **Collections:** prompt_versions {shopId, name, version, text, chars, hash, note, createdByUserId, createdAt} unique on (shopId, name, version); prompt_states {shopId, name, activeVersion, latestVersion, updatedAt} unique on (shopId, name).
 - **What stays outside the editable text:** the safer-presentation notes (SAFE_IMAGE_NOTE, SAFE_VIDEO_NOTE), the STYLE DIRECTION paragraphs, the product and reference labels and the fallback plan are code, not prompts, and are applied around any version.
+
+### 12.7 Prompt design principles (research notes)
+
+How the templates and the harness are shaped, from the model vendor's own guidance (checked 2026-10-13).
+
+**Image model (Gemini 2.5 Flash Image)**
+- Describe the scene in sentences; do not list keywords. State the purpose of the image. Be specific about materials, texture and form. (Google, "How to prompt Gemini 2.5 Flash Image Generation for the best results".)
+- Photographic language controls framing: shot type, angle, lens (for example "85mm portrait lens"), lighting setup. The photorealistic and product templates are: shot type, subject, action, environment, lighting, camera and lens, key textures, aspect ratio.
+- Multiple input images are composed with an explicit instruction ("take the [element] from image 1 and place it on the [element] of image 2") and the things that must stay unchanged are named. The output follows the aspect ratio of the last image, so the aspect ratio is also set explicitly.
+- Phrase positively: describe the wanted scene instead of "no X". This is why focus is stated as "deep focus, everything crisp" and defects are short noun phrases in an Avoid line rather than a list of prohibitions.
+- 3 input images per prompt on Vertex for this model.
+
+**Video model (Veo)**
+- Prompt order: cinematography, subject, action, context, style and ambiance. The video template and the planner's video rule follow it, and the camera move and the action are chosen before the shot prompt is written.
+- Camera vocabulary is the model's own (eye-level, tracking, dolly, arc, handheld; shallow or deep depth of field; locked-off). Describe the physical behaviour of fabric and light for realism. Negative prompts describe what to exclude (nouns), not "no" or "don't"; they go in negativePrompt, not the body of the prompt.
+- Reference images are used as ingredients: "Using the provided images of the [subject]..." (up to 3 asset images).
+
+**Planner (Gemini text model with a response schema)**
+- One delimiter style (markdown headings) and the same terms throughout; define ambiguous terms (hero shot, detail shot); instructions at the end of the input after the context (the product data and images come first, the shot counts last).
+- Include a worked example for the output format and label it as layout only to avoid copying its content.
+- Use the structured-output schema rather than describing JSON in prose; the model writes properties in schema order, so analysis comes first (product, then style, then shots) and a shot's decisions (scene, camera, light, people, move) come before its prompt. Field descriptions are sent with the schema.
+- Keep the schema simple (shallow nesting, short names) and the temperature moderate for repeatable plans.
+
+**Harness**
+- Do not expect a perfect first result: two images and a video per product give the merchant a choice; a safety block is retried once in a person-free presentation; failed jobs can be retried.
+- Prompts are versioned per store and each output records the prompt versions that made it (section 12.6), so a change in quality can be traced to a prompt change.
+- Not done: an automatic vision check of each output against the product photos with a regeneration on mismatch. It would raise fidelity at the cost of one more model call per output.
 
 ## 13. Generation config (apps/backend/config/generation.config.json)
 
@@ -1234,6 +1263,11 @@ This section records where the implementation differs from the text above or add
 ### Aesthetic source and more natural video
 - styleMode (`reference` | `apparel` | `studio`) is set on the batch and overridable per product (SPEC 9). `apparel` derives the whole scene from the garment; `studio` is a seamless-backdrop studio photoshoot; `reference` leads with the uploaded style references. References blend in on top in every mode, and only `reference` mode requires one, so a merchant can generate with no upload at all. The planner prompt carries a STYLE DIRECTION paragraph per mode (STYLE_GUIDANCE), the fallback plan has a matching setting, and REFERENCE_MODES gained `none` for an item that uses no references. Persisted on batch_items.styleMode and shown in the item view. Web only for now; the mobile app defaults to `reference`.
 - Video realism: the planner video rule and the Veo prompt now ask for real-camera footage with lifelike ambient motion instead of a stiff, over-smooth, rendered look, and the default video negativePrompt adds 3d-render / game / waxy / rubbery / warping / over-smooth-slow-motion terms.
+
+### Reference scene fidelity and deep focus
+- Reference generations ignored the reference's scene: the image call sent up to 4 product images before 2 style references, past the model's documented 3-image limit, and the first product photo became the base that was copied. The input is now a budget of 3 (one style reference first, then product images) with an explicit scene brief (section 10.3).
+- Bokeh and background blur are removed everywhere: the planner is told to write deep-focus captures, the image and video templates and a code-level focus note state deep focus, the fallback plan no longer says shallow depth of field, deBlur rewrites blur phrases the planner wrote in the shot, camera and lighting fields, and the default video negativePrompt lists bokeh, blurred background and shallow depth of field.
+- Plan schema: fields carry descriptions and a video shot's cameraMove and subjectAction now precede its prompt (section 12.7).
 
 ### Safety blocks and adding outputs to products
 - Safety blocks: ordinary fashion shots (a person wearing the garment) were sometimes blocked by the provider's filters. The planner prompt now plans only wholesome, family-friendly content: garments described by cut and fabric, no suggestive or body words, calm fully clothed adult models in catalog poses, no intimate settings, and no person at all for children's, swimwear, underwear or sleepwear products. The image and Veo templates say the same.
