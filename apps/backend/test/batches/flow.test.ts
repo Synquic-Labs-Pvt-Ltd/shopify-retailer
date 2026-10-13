@@ -498,7 +498,7 @@ describe('video polling', () => {
     expect(kit.ai.calls.submit).toHaveLength(2);
     expect(kit.ai.calls.submit[0]?.prompt).not.toContain(SAFE_VIDEO_NOTE);
     expect(kit.ai.calls.submit[1]?.prompt).toContain(SAFE_VIDEO_NOTE);
-    expect(kit.ai.calls.submit[1]?.prompt).toContain('Camera: slow orbit around the product');
+    expect(kit.ai.calls.submit[1]?.prompt).toContain('Cinematography: slow orbit around the product');
     expect(await JobModel.findOne({ batchId, type: 'video' }).lean()).toMatchObject({ status: 'succeeded' });
   });
 

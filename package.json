@@ -8,12 +8,12 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
+    "dev": "node init && turbo run dev",
+    "build": "node init && turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "start": "pnpm -F @rs/backend start"
+    "start": "node init && pnpm -F @rs/backend start"
   },
   "devDependencies": {
     "turbo": "2.11.7"

@@ -125,6 +125,7 @@ export {
   buildFallbackPlan,
   buildImageParts,
   buildPlannerParts,
+  imageInputBudget,
   renderImagePrompt,
   renderPlannerSystemPrompt,
   renderPrompt,

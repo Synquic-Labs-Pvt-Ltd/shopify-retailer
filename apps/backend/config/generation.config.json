@@ -22,8 +22,9 @@
   },
   "ai": {
     "image": {
-      "maxProductImages": 4,
-      "maxStyleReferences": 2
+      "maxProductImages": 3,
+      "maxStyleReferences": 1,
+      "maxInputImages": 3
     },
     "planner": {
       "maxProductImages": 10,
@@ -39,7 +40,7 @@
     "resolution": "720p",
     "generateAudio": false,
     "personGeneration": "allow_adult",
-    "negativePrompt": "text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look, 3d render, video game, animation, plastic or waxy skin, rubbery, uncanny, stiff robotic motion, floating, warping, jitter, over-smooth slow motion"
+    "negativePrompt": "text, captions, subtitles, watermark, logo change, distorted product, morphing, product changing shape or color, duplicate product, extra limbs, flicker, low quality, cartoon, CGI look, 3d render, video game, animation, plastic or waxy skin, rubbery, uncanny, stiff robotic motion, floating, warping, jitter, over-smooth slow motion, bokeh, blurred background, background blur, shallow depth of field, out of focus, soft focus, tilt-shift"
   },
   "references": {
     "maxPerProduct": 5,

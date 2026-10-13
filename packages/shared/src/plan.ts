@@ -11,39 +11,70 @@ export const PLAN_LIMITS = {
   promptMaxChars: 2000,
 } as const;
 
-const shotFields = {
-  shotId: z.string().min(1),
-  title: z.string().min(1).max(PLAN_LIMITS.titleMaxChars),
-  scene: z.string().min(1),
-  camera: z.string().min(1),
-  lighting: z.string().min(1),
-  people: z.string().min(1),
-  prompt: z.string().min(1).max(PLAN_LIMITS.promptMaxChars),
-  negative: z.string(),
+// The descriptions go to the planner as part of the response schema, and the property order is the order the model
+// writes in: the decisions that shape a shot (scene, camera, light, people, move) come before the prompt that
+// brings them together. Keep the order when adding fields.
+const DESCRIPTIONS = {
+  shotId: 'A short unique id, for example image-1 or video-1.',
+  title: 'A short name for the shot, at most 60 characters.',
+  scene: 'One sentence: where the shot takes place and what stands or sits around the product.',
+  camera:
+    'Shot type, angle, lens and framing, for example "full-length, eye-level, 50mm lens, the whole outfit in frame". Everything is in deep focus.',
+  lighting: 'Direction, quality and time of day of the light, for example "soft window light from the left, late morning".',
+  people: 'The word none, or one adult model in a calm, natural pose.',
+  cameraMove:
+    'One real camera move: locked-off tripod, slow pan, slow tilt, dolly in, tracking, arc, or subtle handheld. Chosen before the prompt is written.',
+  subjectAction: 'One small, physically real action of the subject or the fabric, or the word none.',
+  prompt:
+    'A narrative paragraph of 60 to 140 words describing the final image or video: shot type, the subject wearing the exact garment, the pose or action, the environment with named props, the light, the camera and lens, the palette and mood. Describe what is in the frame.',
+  negative: 'Visual defects to avoid, as short noun phrases, for example "warped hands, extra objects, text".',
+} as const;
+
+const shotStart = {
+  shotId: z.string().min(1).describe(DESCRIPTIONS.shotId),
+  title: z.string().min(1).max(PLAN_LIMITS.titleMaxChars).describe(DESCRIPTIONS.title),
+  scene: z.string().min(1).describe(DESCRIPTIONS.scene),
+  camera: z.string().min(1).describe(DESCRIPTIONS.camera),
+  lighting: z.string().min(1).describe(DESCRIPTIONS.lighting),
+  people: z.string().min(1).describe(DESCRIPTIONS.people),
 };
 
-export const imageShotSchema = z.object(shotFields);
+const shotEnd = {
+  prompt: z.string().min(1).max(PLAN_LIMITS.promptMaxChars).describe(DESCRIPTIONS.prompt),
+  negative: z.string().describe(DESCRIPTIONS.negative),
+};
+
+export const imageShotSchema = z.object({ ...shotStart, ...shotEnd });
 
 export const videoShotSchema = z.object({
-  ...shotFields,
-  cameraMove: z.string().min(1),
-  subjectAction: z.string().min(1),
+  ...shotStart,
+  cameraMove: z.string().min(1).describe(DESCRIPTIONS.cameraMove),
+  subjectAction: z.string().min(1).describe(DESCRIPTIONS.subjectAction),
+  ...shotEnd,
 });
 
 export const creativePlanSchema = z.object({
   product: z.object({
-    category: z.string().min(1),
-    keyAttributes: z.array(z.string().min(1)).max(PLAN_LIMITS.keyAttributes.max),
-    mustPreserve: z.array(z.string().min(1)).min(1),
-    scaleHint: z.string(),
+    category: z.string().min(1).describe('Short product category, for example "denim co-ord set".'),
+    keyAttributes: z
+      .array(z.string().min(1))
+      .max(PLAN_LIMITS.keyAttributes.max)
+      .describe('3 to 8 distinctive attributes: fabric, cut, color, print, hardware.'),
+    mustPreserve: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe(
+        'The garment checklist: one entry per visible piece or distinctive detail with exact colors and fabric words, for example "Top: ...", "Bottom: ...", "Print: ...", "Hardware: ...".',
+      ),
+    scaleHint: z.string().describe('How large the product is relative to the body or to common objects.'),
   }),
   referenceStyle: z.object({
-    setting: z.string(),
-    lighting: z.string(),
-    palette: z.string(),
-    mood: z.string(),
-    composition: z.string(),
-    motion: z.string(),
+    setting: z.string().describe('The specific environment, with the backdrop color and surface and the props that stand in it.'),
+    lighting: z.string().describe('Direction, quality and time of day of the light.'),
+    palette: z.string().describe('The dominant colors of the scene.'),
+    mood: z.string().describe('The feeling of the scene in a few words.'),
+    composition: z.string().describe('Framing, camera distance and how the subject is placed.'),
+    motion: z.string().describe('How the camera and the subject move in the video shots.'),
   }),
   imageShots: z.array(imageShotSchema),
   videoShots: z.array(videoShotSchema),

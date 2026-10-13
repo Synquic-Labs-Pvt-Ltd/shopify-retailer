@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Retailer Studio backend: Express 5 modular monolith (api, worker or both).",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc --noEmit",
-    "start": "tsx src/server.ts",
+    "dev": "node init && tsx watch src/server.ts",
+    "build": "node init && tsc --noEmit",
+    "start": "node init && tsx src/server.ts",
     "smoke": "tsx scripts/smoke-providers.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

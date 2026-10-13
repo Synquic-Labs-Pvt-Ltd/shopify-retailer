@@ -23,8 +23,6 @@ ios/
 *.ipa
 
 # env and secrets
-.env
-.env.*
 !.env.example
 *.keystore
 *.jks
@@ -35,7 +33,6 @@ google-credentials*.json
 secrets/
 
 # editor (never commit: auto-run task vector)
-.vscode/
 .idea/
 
 # logs and OS junk
@@ -48,3 +45,7 @@ Thumbs.db
 # scratch
 tmp/
 .tmp/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat

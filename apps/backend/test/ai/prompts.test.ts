@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createCreativePlanSchema, defaultGenerationConfig, type CreativePlan, type ProductSnapshot } from '@rs/shared';
 import { DEFAULT_PROMPTS_DIR, readPromptFile } from '../../src/core/config';
 import {
+  FOCUS_NOTE_IMAGE,
+  FOCUS_NOTE_VIDEO,
   PRODUCT_IMAGES_NOTE,
+  SCENE_REFERENCE_NOTE,
   STYLE_GUIDANCE,
   STYLE_REFERENCE_LABEL,
   SAFE_IMAGE_NOTE,
@@ -12,6 +15,8 @@ import {
   buildFallbackPlan,
   buildImageParts,
   buildPlannerParts,
+  deBlur,
+  imageInputBudget,
   renderImagePrompt,
   renderPlannerSystemPrompt,
   renderPrompt,
@@ -70,10 +75,10 @@ describe('planner prompt', () => {
   it('renders the SPEC 12.1 counts, duration and aspect ratio', () => {
     const rendered = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 2, videoCount: 1 }, config);
     expect(rendered).not.toContain('{{');
-    expect(rendered).toContain('plan exactly 2 still image shots and exactly 1 video shots');
+    expect(rendered).toContain('Plan exactly 2 still image shots and exactly 1 video shots');
     expect(rendered).toContain('single continuous take of 8 seconds, 9:16');
-    expect(rendered.startsWith('You are the creative director of a commercial product photography and video studio')).toBe(true);
-    expect(rendered.trimEnd().endsWith('15. Output only JSON that matches the provided schema. No commentary.')).toBe(true);
+    expect(rendered.startsWith('# Role\n\nYou are the creative director of a commercial product photography and video studio')).toBe(true);
+    expect(rendered.trimEnd().endsWith('Output only JSON that matches the provided schema. No commentary.')).toBe(true);
   });
 
   it('tells the planner that style references never show the product and that all product images are one item', () => {
@@ -205,22 +210,28 @@ describe('image prompt', () => {
     );
     const sequence = parts.map((part) => (part.kind === 'text' ? part.text : part.kind));
     const view = 'the exact product, the same item from another view';
-    const style = STYLE_REFERENCE_LABEL;
+    // The style reference comes first (the scene to recreate), then the product images, and the whole set stays inside
+    // the model's input budget: one style reference and two product images.
     expect(sequence).toEqual([
-      `PRODUCT IMAGE 1 of 4 (${view})`,
+      `STYLE REFERENCE 1 of 1 (${STYLE_REFERENCE_LABEL})`,
       'inlineData',
-      `PRODUCT IMAGE 2 of 4 (${view})`,
+      `PRODUCT IMAGE 1 of 2 (${view})`,
       'inlineData',
-      `PRODUCT IMAGE 3 of 4 (${view})`,
-      'inlineData',
-      `PRODUCT IMAGE 4 of 4 (${view})`,
-      'inlineData',
-      `STYLE REFERENCE 1 (${style})`,
-      'inlineData',
-      `STYLE REFERENCE 2 (${style})`,
+      `PRODUCT IMAGE 2 of 2 (${view})`,
       'inlineData',
       'RENDERED PROMPT',
     ]);
+    expect(parts.filter((part) => part.kind === 'inlineData')).toHaveLength(config.ai.image.maxInputImages);
+  });
+
+  it('splits the input budget: the style reference keeps its place and at least one product image stays', () => {
+    const caps = { maxProductImages: 4, maxStyleReferences: 2, maxInputImages: 3 };
+    expect(imageInputBudget(caps, { styles: 0, products: 6 })).toEqual({ styles: 0, products: 3 });
+    expect(imageInputBudget(caps, { styles: 1, products: 6 })).toEqual({ styles: 1, products: 2 });
+    expect(imageInputBudget(caps, { styles: 5, products: 6 })).toEqual({ styles: 2, products: 1 });
+    expect(imageInputBudget(caps, { styles: 3, products: 1 })).toEqual({ styles: 2, products: 1 });
+    expect(imageInputBudget({ ...caps, maxInputImages: 1 }, { styles: 3, products: 3 })).toEqual({ styles: 0, products: 1 });
+    expect(imageInputBudget(caps, { styles: 2, products: 0 })).toEqual({ styles: 2, products: 0 });
   });
 
   it('handles a product with no style references', () => {
@@ -242,14 +253,51 @@ describe('image prompt', () => {
     expect(rendered).toContain('Shot: PROMPT\nCamera and framing: CAMERA\nLighting: LIGHT\nPeople: none');
     expect(rendered).toContain('Preserve: exact shape; logo on the base.');
     expect(rendered).toContain('a single image, 3:4 aspect ratio');
-    expect(rendered).toContain('Avoid: blur, noise, distorted product, changed or substituted garment');
+    expect(rendered).toContain('Avoid: blur, noise, bokeh, blurred background, shallow depth of field, distorted product, changed or substituted garment');
+    // Deep focus is stated both in the template and in the code-level note that every version gets.
+    expect(rendered).toContain('The whole frame is in deep focus');
+    expect(rendered.trimEnd().endsWith(FOCUS_NOTE_IMAGE)).toBe(true);
+    expect(rendered).not.toContain(SCENE_REFERENCE_NOTE);
+  });
+
+  it('adds the scene brief only when the image model receives a style reference', () => {
+    const shot = plan.imageShots[0];
+    if (shot === undefined) throw new Error('fixture plan has no image shot');
+    const withScene = renderImagePrompt(imageTemplate, plan, shot, config, { scene: true });
+    expect(withScene).toContain(SCENE_REFERENCE_NOTE);
+    expect(withScene.indexOf(SCENE_REFERENCE_NOTE)).toBeLessThan(withScene.indexOf(FOCUS_NOTE_IMAGE));
+    // The safer retry drops the style references, so it does not carry the scene brief either.
+    const safe = renderImagePrompt(imageTemplate, plan, shot, config, { scene: true, safe: true });
+    expect(safe).not.toContain(SCENE_REFERENCE_NOTE);
+    expect(safe.endsWith(SAFE_IMAGE_NOTE)).toBe(true);
+  });
+
+  it('rewrites blur the planner wrote into deep focus in the shot fields, and leaves the negative field alone', () => {
+    const shot = plan.imageShots[0];
+    if (shot === undefined) throw new Error('fixture plan has no image shot');
+    const rendered = renderImagePrompt(
+      imageTemplate,
+      plan,
+      {
+        ...shot,
+        prompt: 'A model on a street with creamy bokeh and a blurred background, shot at f/1.8 with shallow depth of field.',
+        camera: '85mm portrait lens, very shallow depth of field',
+        lighting: 'soft window light',
+        negative: 'blurry background, text',
+      },
+      config,
+    );
+    expect(rendered).toContain('Shot: A model on a street with sharp background detail and a sharp, in-focus background, shot at f/8 with deep depth of field.');
+    expect(rendered).toContain('Camera and framing: 85mm portrait lens, deep depth of field');
+    // The negative field is a list of things to avoid, so blur stays in it.
+    expect(rendered).toContain('Avoid: blurry background, text, bokeh');
   });
 
   it('keeps the garment rules: product images are the only source of clothing, style references never are', () => {
     const shot = plan.imageShots[0];
     if (shot === undefined) throw new Error('fixture plan has no image shot');
     const rendered = renderImagePrompt(imageTemplate, plan, shot, config);
-    expect(rendered).toContain('Outfit fidelity');
+    expect(rendered).toContain('Garment (highest priority)');
     expect(rendered).toContain('Do not change the dress, swap the top or bottom, replace the shoes');
     expect(rendered).toContain('Clothing seen on people in the STYLE REFERENCES is never used.');
     expect(rendered).toContain('A style reference never shows the product');
@@ -274,9 +322,9 @@ describe('safer presentation after a safety block', () => {
   it('turns the video into a calm orbit around the garment with no subject action when safe', () => {
     const normal = renderVideoPrompt(videoTemplate, plan, videoShot);
     const safe = renderVideoPrompt(videoTemplate, plan, videoShot, { safe: true });
-    expect(normal).toContain('Camera: slow pan');
+    expect(normal).toContain('Cinematography: slow pan');
     expect(normal).toContain('she turns to the window');
-    expect(safe).toContain('Camera: slow orbit around the product');
+    expect(safe).toContain('Cinematography: slow orbit around the product');
     expect(safe).not.toContain('she turns to the window');
     expect(safe.endsWith(SAFE_VIDEO_NOTE)).toBe(true);
   });
@@ -295,11 +343,15 @@ describe('video prompt', () => {
     const shot = { ...buildFakePlan({ imageCount: 0, videoCount: 1 }).videoShots[0]!, prompt: 'A lamp glows.', cameraMove: 'slow push-in', subjectAction: 'a hand turns the switch', lighting: 'warm window light' };
     const rendered = renderVideoPrompt(videoTemplate, plan, shot);
     expect(rendered).not.toContain('{{');
-    expect(rendered.startsWith('A lamp glows. Camera: slow push-in, single continuous shot, smooth and steady with natural easing, shot on a real cinema camera, cinematic commercial quality. Action: a hand turns the switch. Lighting: warm window light.')).toBe(true);
-    expect(rendered).toContain('Make it look like real footage, not a 3D render or game');
+    // Veo's own order: cinematography, subject and scene, action, then style and ambiance.
+    expect(rendered.startsWith('Cinematography: slow push-in, a single continuous shot at natural real-time speed')).toBe(true);
+    const order = ['Cinematography: slow push-in', 'Subject and scene: A lamp glows.', 'Action: a hand turns the switch.', 'Style and ambiance: warm window light'].map((part) => rendered.indexOf(part));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(rendered).toContain('real-location footage');
     expect(rendered).toContain('exactly the product shown in the reference images');
     expect(rendered).toContain('never a different garment: exact shape; logo on the base.');
-    expect(rendered.trimEnd().endsWith('No on-screen text, captions, subtitles or watermarks.')).toBe(true);
+    expect(rendered.trimEnd().endsWith(FOCUS_NOTE_VIDEO)).toBe(true);
   });
 });
 
@@ -324,7 +376,7 @@ describe('buildFallbackPlan (SPEC 12.5)', () => {
       'every garment and accessory worn in the product images, exactly as shown, with nothing swapped, added or restyled',
     ]);
     expect(result.imageShots[0]?.prompt).toBe(
-      'Aurora Table Lamp, a ceramic table lamp by Nordhaus, displayed as the hero in a bright, minimal, premium lifestyle setting that suits the product, soft natural window light, shallow depth of field, eye-level 50mm framing, clean uncluttered background, warm neutral palette.',
+      'Aurora Table Lamp, a ceramic table lamp by Nordhaus, displayed as the hero in a bright, minimal, premium lifestyle setting that suits the product, soft natural window light, deep depth of field with everything in sharp focus, eye-level 50mm framing, clean uncluttered background, warm neutral palette.',
     );
     expect(result.imageShots[1]?.prompt).toContain('close detail framing at 85mm');
     expect(result.videoShots[0]?.prompt).toContain('slow push-in toward the product');
@@ -358,5 +410,26 @@ describe('buildFallbackPlan (SPEC 12.5)', () => {
     const result = buildFallbackPlan(rich, { imageCount: 1, videoCount: 0 }, config);
     expect(result.product.keyAttributes.length).toBeLessThanOrEqual(8);
     expect(new Set(result.product.keyAttributes).size).toBe(result.product.keyAttributes.length);
+  });
+});
+
+describe('deBlur', () => {
+  it.each([
+    ['A portrait with shallow depth of field.', 'A portrait with deep depth of field.'],
+    ['very shallow depth-of-field and creamy bokeh', 'deep depth of field and sharp background detail'],
+    ['soft bokeh background behind the model', 'sharp background detail behind the model'],
+    ['against a softly blurred backdrop', 'against a sharp, in-focus background'],
+    ['out of focus background', 'sharp, in-focus background'],
+    ['background blur and f/1.8 aperture', 'sharp background and f/8 aperture'],
+    ['shot at f2.8', 'shot at f/8'],
+    ['a softly blurred window in the background', 'a sharp window in the background'],
+    ['blurry trees behind the model', 'sharp trees behind the model'],
+  ])('rewrites %j', (input, expected) => {
+    expect(deBlur(input)).toBe(expected);
+  });
+
+  it('leaves ordinary text and a deep aperture alone', () => {
+    const text = 'A full-length photograph at f/8 in deep focus, the whole street sharp, 35mm lens.';
+    expect(deBlur(text)).toBe(text);
   });
 });

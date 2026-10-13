@@ -38,7 +38,7 @@ export type ReferenceVideoInput =
 // adds them, refine the result in every mode.
 export const STYLE_GUIDANCE: Record<StyleMode, string> = {
   reference:
-    'STYLE DIRECTION: The STYLE REFERENCES are the main brief. Match them closely — recreate their setting, environment, set dressing and props, color palette and color grading, lighting, time of day, mood and composition, and stage similar props (furniture, plants, equipment, and the like), so every shot looks like it belongs to that same shoot. Keep the model dressed only in the product and the outfit from the PRODUCT IMAGES; take everything else about the world from the references. If none are provided, infer a fitting, premium, natural setting from the product category and data.',
+    'STYLE DIRECTION: The STYLE REFERENCES are the main brief. Match them closely — recreate their setting, environment, set dressing and props, color palette and color grading, lighting, time of day, mood and composition, and stage similar props (furniture, plants, equipment, and the like), so every shot looks like it belongs to that same shoot. Be specific: in every shot prompt name the backdrop color and surface, the concrete props you see and where they stand, and the light direction; never fall back to vague words such as "studio" or "minimal setting". Keep the model dressed only in the product and the outfit from the PRODUCT IMAGES; take everything else about the world from the references. If none are provided, infer a fitting, premium, natural setting from the product category and data.',
   apparel:
     'STYLE DIRECTION: There are no required references. Derive the whole world from the apparel itself — its design, fabric, cut, era, colors and the kind of customer who wears it. Choose a real, believable lifestyle location where this exact piece would be worn, a palette and light that flatter it, and props that fit its story. Make each shot a rich, aspirational, editorial scene (not a plain backdrop) and vary the locations across the shots while keeping one coherent aesthetic. If STYLE REFERENCES are also provided, let them refine this direction.',
   studio:
@@ -143,17 +143,38 @@ export interface ImagePartsInput {
 }
 
 export const STYLE_REFERENCE_LABEL =
-  'recreate its setting, props, palette, light and mood; do not put its clothing on the model or copy its logos, text or a different product';
+  'the scene to recreate: its backdrop, props and how they are placed, lighting, palette, framing and mood. Its person and clothing are NOT used';
 
-// SPEC 10.3 order: a label before each product image, a label before each style reference, then the prompt.
+export interface ImageBudget {
+  styles: number;
+  products: number;
+}
+
+// How many style references and product images the image model gets. The model documents 3 inputs per prompt and
+// uses the later ones unreliably, so the total is capped and the style reference (when there is one) always keeps
+// its place, with at least one product image beside it.
+export function imageInputBudget(
+  caps: GenerationConfig['ai']['image'],
+  available: { styles: number; products: number },
+): ImageBudget {
+  const total = Math.max(1, caps.maxInputImages);
+  const styles = Math.max(0, Math.min(available.styles, caps.maxStyleReferences, total - 1));
+  const products = Math.max(0, Math.min(available.products, caps.maxProductImages, total - styles));
+  return { styles, products };
+}
+
+// Input order for the image model: the style reference first (the scene to recreate), then the product images (the
+// garment to put in it), then the prompt. Product images first made the model copy the first product photo.
 export function buildImageParts(input: ImagePartsInput, config: GenerationConfig): AiPart[] {
   const parts: AiPart[] = [];
-  const productImages = input.productImages.slice(0, config.ai.image.maxProductImages);
+  const budget = imageInputBudget(config.ai.image, { styles: input.styleReferences.length, products: input.productImages.length });
+  const styleReferences = input.styleReferences.slice(0, budget.styles);
+  const productImages = input.productImages.slice(0, budget.products);
+  styleReferences.forEach((image, index) => {
+    parts.push(text(`STYLE REFERENCE ${index + 1} of ${styleReferences.length} (${STYLE_REFERENCE_LABEL})`), imagePart(image));
+  });
   productImages.forEach((image, index) => {
     parts.push(text(`PRODUCT IMAGE ${index + 1} of ${productImages.length} (the exact product, the same item from another view)`), imagePart(image));
-  });
-  input.styleReferences.slice(0, config.ai.image.maxStyleReferences).forEach((image, index) => {
-    parts.push(text(`STYLE REFERENCE ${index + 1} (${STYLE_REFERENCE_LABEL})`), imagePart(image));
   });
   parts.push(text(input.prompt));
   return parts;
@@ -170,9 +191,45 @@ export const SAFE_IMAGE_NOTE =
 export const SAFE_VIDEO_NOTE =
   'Presentation for this version: no person appears. The garment hangs on a plain wooden hanger or sits on a headless mannequin form while the camera moves slowly and smoothly around it, and the fabric stays almost still. A calm, wholesome commercial for a general audience.';
 
+// Added when the image model receives a style reference: rebuild that photograph's scene and put the product outfit
+// in it. Without this the model treats the references as loose inspiration and falls back to the product photo.
+export const SCENE_REFERENCE_NOTE =
+  'Scene brief: take the outfit from the PRODUCT IMAGES and place it on a model inside the scene of STYLE REFERENCE 1. Rebuild that scene: the same kind of backdrop (color, texture, floor), the same kinds of props and how they are arranged, the same lighting direction and quality, color palette, camera distance and framing, and the same mood. The outfit appears exactly as shown in the PRODUCT IMAGES. The person in the style reference only stands in for the pose and framing: use a different adult model with their own face, and replace every garment, shoe and accessory they wear with the product outfit. Logos, brand names and readable text from the style reference stay out of the image.';
+
+// Every generated image and video is shot in deep focus, with a sharp background (merchant request). The notes say
+// what the frame looks like; the models follow a positive description better than a list of "no" (SPEC 12.7).
+export const FOCUS_NOTE_IMAGE =
+  'Focus: deep focus and deep depth of field, the entire frame crisp and sharp from the model to the farthest part of the backdrop, with a clean, evenly sharp, detailed background, as if shot at a small aperture such as f/8.';
+
+export const FOCUS_NOTE_VIDEO =
+  'Focus: deep focus throughout, the subject and the background equally crisp and sharp from the first frame to the last.';
+
+// The planner is told not to write blur, but models add it by habit. Rewrites it in the fields that describe the shot
+// (never in the negative field, where blur is a thing to avoid).
+const DEPTH_OF_FIELD = /\b(?:very |extremely |ultra[- ]|razor[- ])?(?:shallow|narrow|thin)(?: depth[- ]of[- ]field| dof| focus)\b/gi;
+const BOKEH = /\b(?:(?:creamy|soft|dreamy|beautiful|gentle|smooth) )?bokeh(?: effect| background| highlights?| balls?| blur)?\b/gi;
+const BLURRED_BACKGROUND =
+  /\b(?:softly |gently |heavily |slightly )?(?:blurred|blurry|defocused|out[- ]of[- ]focus|soft[- ]focus) (?:background|backdrop|surroundings|scene|environment)\b/gi;
+const BACKGROUND_BLUR = /\b(?:background|backdrop) (?:blur|falloff|fall-off|separation)\b/gi;
+// Any remaining "blurred X" ("a softly blurred window in the background", "blurry trees behind"): X is sharp.
+const BLUR_ADJECTIVE = /\b(?:softly |gently |heavily |slightly |beautifully |lightly |creamy )?(?:blurred|blurry|defocused|out[- ]of[- ]focus)\b/gi;
+const WIDE_APERTURE = /\bf\/?(?:1(?:\.\d)?|2(?:\.\d)?)\b/gi;
+
+export function deBlur(value: string): string {
+  return value
+    .replace(DEPTH_OF_FIELD, 'deep depth of field')
+    .replace(BOKEH, 'sharp background detail')
+    .replace(BLURRED_BACKGROUND, 'sharp, in-focus background')
+    .replace(BACKGROUND_BLUR, 'sharp background')
+    .replace(BLUR_ADJECTIVE, 'sharp')
+    .replace(WIDE_APERTURE, 'f/8');
+}
+
 export interface RenderOptions {
   // Use the safer presentation above (the retry after a safety block).
   safe?: boolean;
+  // The image model gets a style reference, so the prompt carries the scene brief (images only).
+  scene?: boolean;
 }
 
 export function renderImagePrompt(
@@ -183,33 +240,34 @@ export function renderImagePrompt(
   options: RenderOptions = {},
 ): string {
   const rendered = renderPrompt(template, {
-    'shot.prompt': shot.prompt,
-    'shot.camera': shot.camera,
-    'shot.lighting': shot.lighting,
+    'shot.prompt': deBlur(shot.prompt),
+    'shot.camera': deBlur(shot.camera),
+    'shot.lighting': deBlur(shot.lighting),
     'shot.people': options.safe === true ? SAFE_PEOPLE : shot.people,
     'shot.negative': shot.negative,
     'plan.product.mustPreserve': plan.product.mustPreserve.join('; '),
     'image.aspectRatio': config.image.aspectRatio,
   });
-  return options.safe === true ? `${rendered}\n\n${SAFE_IMAGE_NOTE}` : rendered;
+  const notes = [options.scene === true && options.safe !== true ? SCENE_REFERENCE_NOTE : null, FOCUS_NOTE_IMAGE, options.safe === true ? SAFE_IMAGE_NOTE : null];
+  return [rendered, ...notes.filter((note): note is string => note !== null)].join('\n\n');
 }
 
 export function renderVideoPrompt(template: string, plan: CreativePlan, shot: VideoShot, options: RenderOptions = {}): string {
   const rendered = renderPrompt(template, {
     'plan.product.mustPreserve': plan.product.mustPreserve.join('; '),
-    'shot.prompt': shot.prompt,
-    'shot.cameraMove': options.safe === true ? 'slow orbit around the product' : shot.cameraMove,
+    'shot.prompt': deBlur(shot.prompt),
+    'shot.cameraMove': options.safe === true ? 'slow orbit around the product' : deBlur(shot.cameraMove),
     'shot.subjectAction': options.safe === true ? 'none, the product stays still while the camera moves' : shot.subjectAction,
-    'shot.lighting': shot.lighting,
+    'shot.lighting': deBlur(shot.lighting),
   });
-  return options.safe === true ? `${rendered} ${SAFE_VIDEO_NOTE}` : rendered;
+  return `${rendered} ${FOCUS_NOTE_VIDEO}${options.safe === true ? ` ${SAFE_VIDEO_NOTE}` : ''}`;
 }
 
 // Deterministic plan used when the planner job fails (SPEC 12.5). Shots 1 and 2 follow the SPEC wording;
 // further image shots (up to 6) cycle through other framings so they stay distinct.
 const IMAGE_FRAMINGS = [
   { title: 'Hero shot', framing: 'eye-level 50mm framing', camera: 'Eye-level, 50mm lens, product centered' },
-  { title: 'Close detail', framing: 'close detail framing at 85mm', camera: 'Close detail, 85mm lens, shallow depth of field' },
+  { title: 'Close detail', framing: 'close detail framing at 85mm', camera: 'Close detail, 85mm lens, deep depth of field, everything in sharp focus' },
   { title: 'Wide context', framing: 'wide environmental framing at 35mm', camera: 'Wide framing, 35mm lens, product in context' },
   { title: 'Three-quarter angle', framing: 'three-quarter angle at 50mm', camera: 'Three-quarter angle, 50mm lens' },
   { title: 'Low angle', framing: 'low angle framing at 35mm', camera: 'Low angle, 35mm lens' },
@@ -218,7 +276,7 @@ const IMAGE_FRAMINGS = [
 
 const VIDEO_MOVES = ['slow push-in toward the product', 'gentle orbit around the product'] as const;
 
-const FALLBACK_LOOK = 'soft natural window light, shallow depth of field';
+const FALLBACK_LOOK = 'soft natural window light, deep depth of field with everything in sharp focus';
 
 // Deterministic fallback look per aesthetic source (SPEC 9), used when the planner call fails.
 const FALLBACK_STYLE: Record<StyleMode, { setting: string; backdrop: string; palette: string }> = {

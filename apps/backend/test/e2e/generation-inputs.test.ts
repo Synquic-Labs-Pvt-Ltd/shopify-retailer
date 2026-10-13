@@ -73,7 +73,6 @@ afterAll(async () => {
 describe('what the provider receives for a product with own and common references', () => {
   it('follows SPEC 9 and 10 for the planner, the image model and Veo', async () => {
     e2e.editConfig((config) => {
-      config.ai.image.maxStyleReferences = 2;
       config.ai.planner.maxReferenceImages = 3;
       config.ai.planner.maxReferenceVideos = 2;
     });
@@ -131,19 +130,16 @@ describe('what the provider receives for a product with own and common reference
       description: 'Hand glazed lamp.\nLinen shade',
     });
 
-    // Image model: the first 4 product images (featured, the own upload, then Shopify's), the first 2 common style references,
-    // then the rendered prompt.
+    // Image model (3 inputs): the first common style reference first, then the featured image and the own upload, then
+    // the rendered prompt.
     expect(image).toHaveBeenCalledTimes(2);
     for (const [call] of image.mock.calls) {
       expect(call).toMatchObject({ model: 'gemini-2.5-flash-image', location: 'us-central1', aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' });
       const view = 'the exact product, the same item from another view';
       expect(call.parts.slice(0, -1).map(describePart)).toEqual([
-        brief(`PRODUCT IMAGE 1 of 4 (${view})`), 'inline:image/jpeg:product',
-        brief(`PRODUCT IMAGE 2 of 4 (${view})`), 'inline:image/jpeg:o1',
-        brief(`PRODUCT IMAGE 3 of 4 (${view})`), 'inline:image/jpeg:product',
-        brief(`PRODUCT IMAGE 4 of 4 (${view})`), 'inline:image/jpeg:product',
-        brief(`STYLE REFERENCE 1 (${STYLE_REFERENCE_LABEL})`), 'inline:image/jpeg:c1',
-        brief(`STYLE REFERENCE 2 (${STYLE_REFERENCE_LABEL})`), 'inline:image/jpeg:c2',
+        brief(`STYLE REFERENCE 1 of 1 (${STYLE_REFERENCE_LABEL})`), 'inline:image/jpeg:c1',
+        brief(`PRODUCT IMAGE 1 of 2 (${view})`), 'inline:image/jpeg:product',
+        brief(`PRODUCT IMAGE 2 of 2 (${view})`), 'inline:image/jpeg:o1',
       ]);
       const prompt = call.parts[call.parts.length - 1];
       const text = prompt?.kind === 'text' ? prompt.text : '';
@@ -168,7 +164,7 @@ describe('what the provider receives for a product with own and common reference
     });
     expect(submitted.startImage).toBeUndefined();
     expect(submitted.referenceImages).toHaveLength(3);
-    expect(submitted.prompt).toContain('Camera: slow push-in toward the product');
+    expect(submitted.prompt).toContain('Cinematography: slow push-in toward the product');
     expect(submitted.prompt).not.toContain('{{');
 
     // Product images come from the resized CDN urls, the featured one first: the planner gets all of them, the image
@@ -176,12 +172,12 @@ describe('what the provider receives for a product with own and common reference
     const cdn = e2e.stub.state.calls.flatMap((call) => (call.kind === 'cdn' && call.url.includes('/products/') ? [call.url] : []));
     expect(cdn.every((url) => url.includes('width=1536'))).toBe(true);
     const fetched = (suffix: string): number => cdn.filter((url) => url.includes(suffix)).length;
-    expect([1, 2, 3, 4, 5, 6].map((n) => fetched(`ceramic-table-lamp-${n}.jpg`))).toEqual([4, 4, 3, 1, 1, 1]);
+    expect([1, 2, 3, 4, 5, 6].map((n) => fetched(`ceramic-table-lamp-${n}.jpg`))).toEqual([4, 2, 1, 1, 1, 1]);
     // Reference images are downloaded by the planner and the image jobs (2 each); the own upload is also a Veo input.
     // Videos only by url.
     const refFetches = (tag: string): number =>
       e2e.stub.state.calls.filter((call) => call.kind === 'cdn' && call.url.startsWith(defined(ref(tag).url).split('?')[0] ?? '')).length;
-    expect(['o1', 'c1', 'c2', 'c3'].map(refFetches)).toEqual([4, 3, 3, 1]);
+    expect(['o1', 'c1', 'c2', 'c3'].map(refFetches)).toEqual([4, 3, 1, 1]);
     expect(['ov1', 'v1', 'v2', 'v3'].map(refFetches)).toEqual([0, 0, 0, 0]);
     vi.restoreAllMocks();
   }, 90_000);
