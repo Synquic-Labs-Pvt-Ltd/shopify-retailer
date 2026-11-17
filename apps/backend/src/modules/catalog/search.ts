@@ -11,9 +11,9 @@ function sanitizeTerm(term: string): string {
     .replace(SYNTAX_CHARACTERS, '\\$&');
 }
 
-// Turns what the merchant typed into a Shopify products query scoped to the title. Every word becomes
-// its own title:*word* term, so a word can never be read as a filter (status:, tag:), an operator
-// (OR, NOT, a leading minus) or a comparator. Returns null when nothing searchable is left.
+// Turns what the merchant typed into a Shopify products query scoped to the title or variant SKU. Every word
+// becomes its own (title:*word* OR sku:word*) term, so a word can never be read as a filter (status:, tag:), an
+// operator (OR, NOT, a leading minus) or a comparator. Returns null when nothing searchable is left.
 export function buildTitleSearch(input: string | undefined): string | null {
   if (input === undefined) return null;
   const terms = input
@@ -21,7 +21,7 @@ export function buildTitleSearch(input: string | undefined): string | null {
     .map(sanitizeTerm)
     .filter((term) => term.length > 0)
     .slice(0, MAX_TERMS);
-  return terms.length === 0 ? null : terms.map((term) => `title:*${term}*`).join(' ');
+  return terms.length === 0 ? null : terms.map((term) => `(title:*${term}* OR sku:${term}*)`).join(' ');
 }
 
 // The status tabs map to Shopify's status filter. It is added by this module, never taken from the typed text.

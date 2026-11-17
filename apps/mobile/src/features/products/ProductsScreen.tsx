@@ -147,13 +147,13 @@ export function ProductsScreen() {
       >
         <Field
           icon="search-outline"
-          placeholder="Search products"
+          placeholder="Search products or SKU"
           value={search}
           onChangeText={setSearch}
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
-          accessibilityLabel="Search products"
+          accessibilityLabel="Search products or SKU"
         />
       </ScreenHeader>
 

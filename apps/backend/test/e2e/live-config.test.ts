@@ -47,9 +47,9 @@ describe('generation settings', () => {
 
     const frozen = defined(await BatchModel.findById(before).lean());
     const fresh = defined(await BatchModel.findById(after).lean());
-    expect(frozen.configSnapshot).toMatchObject({ outputs: { imagesPerProduct: 2, videosPerProduct: 1 }, image: { aspectRatio: '3:4' }, video: { aspectRatio: '9:16' } });
+    expect(frozen.configSnapshot).toMatchObject({ outputs: { imagesPerProduct: 5, videosPerProduct: 3 }, image: { aspectRatio: '3:4' }, video: { aspectRatio: '9:16' } });
     expect(fresh.configSnapshot).toMatchObject({ outputs: { imagesPerProduct: 1, videosPerProduct: 0 }, image: { aspectRatio: '1:1' }, video: { aspectRatio: '16:9' } });
-    expect([frozen.counts.jobsTotal, fresh.counts.jobsTotal]).toEqual([4, 2]);
+    expect([frozen.counts.jobsTotal, fresh.counts.jobsTotal]).toEqual([9, 2]);
 
     await e2e.driveBatch(before, { timeoutMs: 60_000 });
     await e2e.driveBatch(after, { timeoutMs: 60_000 });
@@ -57,8 +57,17 @@ describe('generation settings', () => {
 
     const first = await getBatch(client, before);
     const second = await getBatch(client, after);
-    expect(first).toMatchObject({ status: 'completed', counts: { imagesReady: 2, videosReady: 1 }, configSnapshot: { outputs: { imagesPerProduct: 2, videosPerProduct: 1 } } });
-    expect(first.items[0]?.outputs.map((output) => output.mediaType)).toEqual(['image', 'image', 'video']);
+    expect(first).toMatchObject({ status: 'completed', counts: { imagesReady: 5, videosReady: 3 }, configSnapshot: { outputs: { imagesPerProduct: 5, videosPerProduct: 3 } } });
+    expect(first.items[0]?.outputs.map((output) => output.mediaType)).toEqual([
+      'image',
+      'image',
+      'image',
+      'image',
+      'image',
+      'video',
+      'video',
+      'video',
+    ]);
     expect(second).toMatchObject({ status: 'completed', counts: { imagesReady: 1, videosReady: 0 }, configSnapshot: { outputs: { imagesPerProduct: 1, videosPerProduct: 0 } } });
     expect(second.items[0]?.outputs.map((output) => output.mediaType)).toEqual(['image']);
     expect(second.items[0]?.jobs.map((job) => job.type)).toEqual(['plan', 'image']);

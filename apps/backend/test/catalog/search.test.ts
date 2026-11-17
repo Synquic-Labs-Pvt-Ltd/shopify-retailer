@@ -9,34 +9,36 @@ describe('buildTitleSearch', () => {
     expect(buildTitleSearch('*,*')).toBeNull();
   });
 
-  it('scopes every word to the title', () => {
-    expect(buildTitleSearch('blue lamp')).toBe('title:*blue* title:*lamp*');
+  it('scopes every word to the title or the variant SKU', () => {
+    expect(buildTitleSearch('blue lamp')).toBe('(title:*blue* OR sku:blue*) (title:*lamp* OR sku:lamp*)');
   });
 
   it('escapes the characters that carry meaning in search syntax', () => {
-    expect(buildTitleSearch('status:draft')).toBe('title:*status\\:draft*');
-    expect(buildTitleSearch('a(b)')).toBe('title:*a\\(b\\)*');
-    expect(buildTitleSearch(`it's "x"`)).toBe('title:*it\\\'s* title:*\\"x\\"*');
-    expect(buildTitleSearch('back\\slash')).toBe('title:*back\\\\slash*');
+    expect(buildTitleSearch('status:draft')).toBe('(title:*status\\:draft* OR sku:status\\:draft*)');
+    expect(buildTitleSearch('a(b)')).toBe('(title:*a\\(b\\)* OR sku:a\\(b\\)*)');
+    expect(buildTitleSearch(`it's "x"`)).toBe(`(title:*it\\'s* OR sku:it\\'s*) (title:*\\"x\\"* OR sku:\\"x\\"*)`);
+    expect(buildTitleSearch('back\\slash')).toBe('(title:*back\\\\slash* OR sku:back\\\\slash*)');
   });
 
   it('cannot start another filter, operator or negation', () => {
-    expect(buildTitleSearch('OR')).toBe('title:*OR*');
-    expect(buildTitleSearch('-tag:sale')).toBe('title:*-tag\\:sale*');
-    expect(buildTitleSearch('vendor:x OR tag:y')).toBe('title:*vendor\\:x* title:*OR* title:*tag\\:y*');
+    expect(buildTitleSearch('OR')).toBe('(title:*OR* OR sku:OR*)');
+    expect(buildTitleSearch('-tag:sale')).toBe('(title:*-tag\\:sale* OR sku:-tag\\:sale*)');
+    expect(buildTitleSearch('vendor:x OR tag:y')).toBe(
+      '(title:*vendor\\:x* OR sku:vendor\\:x*) (title:*OR* OR sku:OR*) (title:*tag\\:y* OR sku:tag\\:y*)',
+    );
   });
 
   it('removes wildcards, commas and control characters from words', () => {
-    expect(buildTitleSearch('a*b,c\u0000d')).toBe('title:*abcd*');
+    expect(buildTitleSearch('a*b,c d')).toBe('(title:*abcd* OR sku:abcd*)');
   });
 
   it('keeps non-latin words', () => {
-    expect(buildTitleSearch('ランプ café')).toBe('title:*ランプ* title:*café*');
+    expect(buildTitleSearch('ランプ café')).toBe('(title:*ランプ* OR sku:ランプ*) (title:*café* OR sku:café*)');
   });
 
   it('limits the number of terms', () => {
     const terms = buildTitleSearch('a b c d e f g h i j');
-    expect(terms?.split(' ')).toHaveLength(8);
+    expect(terms?.split(' ')).toHaveLength(8 * 4);
   });
 });
 
@@ -48,10 +50,14 @@ describe('buildProductSearch', () => {
 
   it('adds the status filter in front of the title terms', () => {
     expect(buildProductSearch(undefined, 'active')).toBe('status:active');
-    expect(buildProductSearch('blue lamp', 'draft')).toBe('status:draft title:*blue* title:*lamp*');
+    expect(buildProductSearch('blue lamp', 'draft')).toBe(
+      'status:draft (title:*blue* OR sku:blue*) (title:*lamp* OR sku:lamp*)',
+    );
   });
 
   it('keeps typed text from becoming a filter of its own', () => {
-    expect(buildProductSearch('status:draft', 'active')).toBe('status:active title:*status\\:draft*');
+    expect(buildProductSearch('status:draft', 'active')).toBe(
+      'status:active (title:*status\\:draft* OR sku:status\\:draft*)',
+    );
   });
 });

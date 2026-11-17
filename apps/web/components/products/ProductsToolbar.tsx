@@ -40,9 +40,9 @@ export function ProductsToolbar({ tab, onTabChange, search, onSearchChange }: Pr
         </s-stack>
         <s-search-field
           ref={searchRef}
-          label="Search products"
+          label="Search products or SKU"
           labelAccessibilityVisibility="exclusive"
-          placeholder="Search products"
+          placeholder="Search products or SKU"
           value={search}
         />
       </s-grid>

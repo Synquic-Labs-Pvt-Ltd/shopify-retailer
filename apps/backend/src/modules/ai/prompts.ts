@@ -272,9 +272,14 @@ const IMAGE_FRAMINGS = [
   { title: 'Three-quarter angle', framing: 'three-quarter angle at 50mm', camera: 'Three-quarter angle, 50mm lens' },
   { title: 'Low angle', framing: 'low angle framing at 35mm', camera: 'Low angle, 35mm lens' },
   { title: 'Overhead view', framing: 'overhead framing at 50mm', camera: 'Overhead, 50mm lens, product centered' },
+  { title: 'Back view', framing: 'rear view framing at 50mm', camera: 'Eye-level, 50mm lens, rear view, showing the back of the product' },
 ] as const;
 
-const VIDEO_MOVES = ['slow push-in toward the product', 'gentle orbit around the product'] as const;
+const VIDEO_MOVES = [
+  'slow push-in toward the product',
+  'gentle orbit around the product',
+  'slow turn revealing the back of the product',
+] as const;
 
 const FALLBACK_LOOK = 'soft natural window light, deep depth of field with everything in sharp focus';
 

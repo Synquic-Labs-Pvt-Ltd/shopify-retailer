@@ -41,7 +41,7 @@ export function FeedbackSection() {
         <Banner tone="warning" message="2 products need a reference. Add references to each product or add a common reference." />
         <Banner tone="danger" title="Provider busy" message="Resumes around 14:30." actionLabel="View details" onAction={() => toast.show('Action tapped')} />
         <Banner tone="success" message="Generation queued." />
-        <Banner tone="neutral" message="Each product gets 2 images and 1 video." />
+        <Banner tone="neutral" message="Each product gets 5 images and 3 videos." />
         <Banner tone="pending" message="Waiting for the provider." />
       </GallerySection>
 

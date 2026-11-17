@@ -27,7 +27,7 @@ function isValidTimeZone(zone: string): boolean {
 
 export const outputsConfigSchema = z.strictObject({
   imagesPerProduct: z.number().int().min(0).max(6),
-  videosPerProduct: z.number().int().min(0).max(2),
+  videosPerProduct: z.number().int().min(0).max(3),
 });
 
 export const modelsConfigSchema = z.strictObject({
@@ -200,7 +200,7 @@ export const DEFAULT_VIDEO_NEGATIVE_PROMPT =
 
 export const defaultGenerationConfig: GenerationConfig = {
   version: 1,
-  outputs: { imagesPerProduct: 2, videosPerProduct: 1 },
+  outputs: { imagesPerProduct: 5, videosPerProduct: 3 },
   provider: 'vertex',
   models: {
     planner: 'gemini-2.5-flash',

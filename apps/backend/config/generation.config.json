@@ -1,8 +1,8 @@
 {
   "version": 1,
   "outputs": {
-    "imagesPerProduct": 2,
-    "videosPerProduct": 1
+    "imagesPerProduct": 5,
+    "videosPerProduct": 3
   },
   "provider": "vertex",
   "models": {

@@ -23,7 +23,7 @@ Not related to Trendzo or ClosetX in any way: no shared code, branding, names, a
 5. Reference resolution rules (section 9) are shown live. Generate stays disabled until every selected product resolves to at least one reference.
 6. Generate creates a batch. The backend splits it into jobs on the queue and returns at once.
 7. The Queue tab shows batches with progress. Batch detail shows each product's status, and outputs appear as they finish.
-8. Each product gets the configured number of outputs: 2 images and 1 video by default, set in the config file. The merchant views them full screen and downloads each one, or all of them, to the phone gallery.
+8. Each product gets the configured number of outputs: 5 images and 3 videos by default, set in the config file. The merchant views them full screen and downloads each one, or all of them, to the phone gallery.
 9. Every reference and output is stored in Shopify Files on the merchant's store.
 
 ## 3. Glossary
@@ -289,7 +289,7 @@ The web app (apps/web) runs inside the Shopify admin and does not use the redire
 - 1 plan job. Its lane is the planner model.
 - imagesPerProduct image jobs, each depending on the plan job, with outputIndex 0 to n-1.
 - videosPerProduct video jobs, each depending on the plan job.
-- Defaults are 2 images and 1 video, from generation.config.json. Counts are snapshotted into the batch at creation, so editing the config only affects new batches. Rate limits, on the other hand, are read live.
+- Defaults are 5 images and 3 videos, from generation.config.json. Counts are snapshotted into the batch at creation, so editing the config only affects new batches. Rate limits, on the other hand, are read live.
 
 ### 10.2 Plan job (planner model)
 - Inputs:
@@ -534,7 +534,7 @@ How the templates and the harness are shaped, from the model vendor's own guidan
 - Keep the schema simple (shallow nesting, short names) and the temperature moderate for repeatable plans.
 
 **Harness**
-- Do not expect a perfect first result: two images and a video per product give the merchant a choice; a safety block is retried once in a person-free presentation; failed jobs can be retried.
+- Do not expect a perfect first result: five images and three videos per product give the merchant a choice; a safety block is retried once in a person-free presentation; failed jobs can be retried.
 - Prompts are versioned per store and each output records the prompt versions that made it (section 12.6), so a change in quality can be traced to a prompt change.
 - Not done: an automatic vision check of each output against the product photos with a regeneration on mismatch. It would raise fidelity at the cost of one more model call per output.
 
@@ -550,8 +550,8 @@ How the templates and the harness are shaped, from the model vendor's own guidan
 | Key | Default | Meaning |
 |---|---|---|
 | version | 1 | Schema version. |
-| outputs.imagesPerProduct | 2 | 0 to 6. |
-| outputs.videosPerProduct | 1 | 0 to 2. |
+| outputs.imagesPerProduct | 5 | 0 to 6. |
+| outputs.videosPerProduct | 3 | 0 to 3. |
 | provider | "vertex" | vertex, aistudio or fake. |
 | models.planner | "gemini-2.5-flash" | Verified in Phase 0 by the smoke test; use the newest GA Flash text model on Vertex. |
 | models.image | "gemini-2.5-flash-image" | GA. Upgrade candidate: gemini-3.1-flash-image-preview on location global. |
