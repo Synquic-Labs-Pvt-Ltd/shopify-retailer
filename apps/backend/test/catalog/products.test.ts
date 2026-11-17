@@ -100,7 +100,11 @@ describe('catalog service', () => {
 
     await service.listProducts(SHOP_ID, { limit: 25, cursor: 'abc', q: 'blue status:draft' });
 
-    expect(calls[0]?.variables).toEqual({ first: 25, after: 'abc', query: 'title:*blue* title:*status\\:draft*' });
+    expect(calls[0]?.variables).toEqual({
+      first: 25,
+      after: 'abc',
+      query: '(title:*blue* OR sku:blue*) (title:*status\\:draft* OR sku:status\\:draft*)',
+    });
   });
 
   it('never lists a product without an image, and reads on to the next Shopify page when a page comes up short', async () => {
@@ -144,7 +148,7 @@ describe('catalog service', () => {
     await service.listProducts(SHOP_ID, { limit: 10, status: 'draft', q: 'blue' });
     await service.listProducts(SHOP_ID, { limit: 10, status: 'active' });
 
-    expect(calls.map((call) => call.variables?.query)).toEqual(['status:draft title:*blue*', 'status:active']);
+    expect(calls.map((call) => call.variables?.query)).toEqual(['status:draft (title:*blue* OR sku:blue*)', 'status:active']);
   });
 
   it('returns the detail with plain text, every image up to twelve, resized, and the gid', async () => {
@@ -290,7 +294,7 @@ describe('catalog routes', () => {
     expect(response.status).toBe(200);
     expect(productListResponseSchema.parse(response.body).items).toHaveLength(1);
     expect(calls[0]?.shopId).toBe(SHOP_ID);
-    expect(calls[0]?.variables).toEqual({ first: 25, after: null, query: 'title:*lamp*' });
+    expect(calls[0]?.variables).toEqual({ first: 25, after: null, query: '(title:*lamp* OR sku:lamp*)' });
   });
 
   it('validates the list query with the shared schema', async () => {

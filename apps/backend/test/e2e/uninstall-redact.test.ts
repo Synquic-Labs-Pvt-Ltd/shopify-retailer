@@ -67,7 +67,17 @@ describe('before the uninstall', () => {
     await e2e.tick();
     await e2e.settle();
     const midway = await getBatch(gone, batches.midway);
-    expect(midway.items[0]?.jobs.map((job) => job.status)).toEqual(['succeeded', 'queued', 'queued', 'queued']);
+    expect(midway.items[0]?.jobs.map((job) => job.status)).toEqual([
+      'succeeded',
+      'queued',
+      'queued',
+      'queued',
+      'queued',
+      'queued',
+      'queued',
+      'queued',
+      'queued',
+    ]);
 
     staysReference = defined((await uploadReadyReferences(stays, [commonImageSpec('stays-ref', FAKE_JPEG)]))[0]);
 
@@ -120,7 +130,17 @@ describe('app/uninstalled', () => {
     expect(statuses.map((batch) => batch.status)).toEqual(['completed', 'cancelled', 'cancelled']);
     expect(statuses[1]?.cancelRequestedAt).toBeInstanceOf(Date);
     const midwayJobs = await JobModel.find({ batchId: batches.midway }).sort({ createdAt: 1 }).lean();
-    expect(midwayJobs.map((job) => job.status)).toEqual(['succeeded', 'cancelled', 'cancelled', 'cancelled']);
+    expect(midwayJobs.map((job) => job.status)).toEqual([
+      'succeeded',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+      'cancelled',
+    ]);
     expect((await BatchItemModel.find({ batchId: batches.untouched }).lean()).map((item) => item.status)).toEqual(['cancelled']);
 
     // Nothing more is generated or uploaded for a shop that left.
@@ -158,7 +178,7 @@ describe('app/uninstalled', () => {
     staysBatch = await seed(stays, 0, staysReference);
     expect((await e2e.driveBatch(staysBatch, { timeoutMs: 60_000 })).status).toBe('completed');
     await e2e.settle();
-    expect((await getBatch(stays, staysBatch)).counts).toMatchObject({ jobsSucceeded: 4, imagesReady: 2, videosReady: 1 });
+    expect((await getBatch(stays, staysBatch)).counts).toMatchObject({ jobsSucceeded: 9, imagesReady: 5, videosReady: 3 });
   }, 90_000);
 
   it('brings the shop back when the merchant installs again', async () => {
@@ -183,8 +203,8 @@ describe('shop/redact', () => {
     const before = await footprint(gone);
     const staysBefore = await footprint(stays);
     expect(Object.keys(before).sort()).toEqual(['batch_items', 'batches', 'jobs', 'login_codes', 'media_assets', 'oauth_states', 'sessions', 'shops', 'users', 'webhook_events']);
-    // The reference plus the three outputs of the finished batch.
-    expect(before.media_assets).toBe(4);
+    // The reference plus the eight outputs of the finished batch.
+    expect(before.media_assets).toBe(9);
 
     const redact = await sendWebhook(e2e, { topic: 'shop/redact', shop: GONE, id: 'wh-redact-1', payload: { shop_id: 1, shop_domain: GONE } });
     expect(redact.status).toBe(200);
@@ -194,7 +214,7 @@ describe('shop/redact', () => {
     expect(await footprint(stays)).toEqual(staysBefore);
     expect(await ShopModel.countDocuments({ shopDomain: GONE })).toBe(0);
     expect((await stays.get('/api/v1/me')).status).toBe(200);
-    expect((await getBatch(stays, staysBatch)).counts.jobsSucceeded).toBe(4);
+    expect((await getBatch(stays, staysBatch)).counts.jobsSucceeded).toBe(9);
 
     // The old tokens lead nowhere.
     expect((await gone.get('/api/v1/me')).status).toBe(409);

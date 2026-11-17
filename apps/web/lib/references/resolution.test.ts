@@ -23,7 +23,7 @@ const ready = (id: string, mediaId: string): DraftReference => slot(id, { status
 
 // A draft slice with the aesthetic defaults; a test overrides styleMode/productStyleModes as it needs.
 function styled<T extends object>(draft: T, styleMode: StyleMode = 'reference', productStyleModes: Record<string, StyleMode> = {}) {
-  return { ...draft, styleMode, productStyleModes };
+  return { ...draft, styleMode, productStyleModes, imagesPerProduct: null, videosPerProduct: null };
 }
 
 describe('resolutionLabel', () => {

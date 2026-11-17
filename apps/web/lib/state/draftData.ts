@@ -16,6 +16,8 @@ export function emptyDraft(): DraftData {
     productRefs: {},
     styleMode: 'apparel',
     productStyleModes: {},
+    imagesPerProduct: null,
+    videosPerProduct: null,
   };
 }
 
@@ -78,6 +80,9 @@ const persistedSchema = z.object({
   // Older drafts have neither; the store migration fills them, and a lone missing field defaults here too.
   styleMode: styleModeSchema.default('apparel'),
   productStyleModes: z.record(z.string(), styleModeSchema).default({}),
+  // Older drafts have neither: a lone missing field defaults to null (follow the shop's configured default).
+  imagesPerProduct: z.number().int().positive().nullable().default(null),
+  videosPerProduct: z.number().int().nonnegative().nullable().default(null),
 });
 
 // An upload cannot outlive the page, and its File is gone: whatever was mid-upload at the last save is
@@ -106,6 +111,8 @@ export function restoreDraft(persisted: unknown, current: DraftState): DraftStat
     ),
     styleMode: saved.styleMode,
     productStyleModes: saved.productStyleModes,
+    imagesPerProduct: saved.imagesPerProduct,
+    videosPerProduct: saved.videosPerProduct,
   };
 }
 
@@ -118,5 +125,7 @@ export function partializeDraft(state: DraftData): DraftData {
     productRefs: state.productRefs,
     styleMode: state.styleMode,
     productStyleModes: state.productStyleModes,
+    imagesPerProduct: state.imagesPerProduct,
+    videosPerProduct: state.videosPerProduct,
   };
 }

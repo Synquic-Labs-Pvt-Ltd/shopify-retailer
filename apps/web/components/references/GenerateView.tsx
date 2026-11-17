@@ -10,6 +10,7 @@ import { AestheticSection } from './AestheticSection';
 import { BlockedUploadBanner } from './BlockedUploadBanner';
 import { CommonReferences } from './CommonReferences';
 import { GenerateSkeleton } from './GenerateSkeleton';
+import { OutputCountsSection } from './OutputCountsSection';
 import { ProductReferenceRow } from './ProductReferenceRow';
 import { SummaryAside } from './SummaryAside';
 import { canGenerate, generateLabel, processingFailedMessage, slotCounts, unresolvedBanner } from './logic';
@@ -41,9 +42,11 @@ export function GenerateView() {
   const productRefs = useDraftStore((state) => state.productRefs);
   const styleMode = useDraftStore((state) => state.styleMode);
   const productStyleModes = useDraftStore((state) => state.productStyleModes);
+  const imagesPerProduct = useDraftStore((state) => state.imagesPerProduct);
+  const videosPerProduct = useDraftStore((state) => state.videosPerProduct);
   const draft = useMemo(
-    () => ({ products, commonRefs, productRefs, styleMode, productStyleModes }),
-    [products, commonRefs, productRefs, styleMode, productStyleModes],
+    () => ({ products, commonRefs, productRefs, styleMode, productStyleModes, imagesPerProduct, videosPerProduct }),
+    [products, commonRefs, productRefs, styleMode, productStyleModes, imagesPerProduct, videosPerProduct],
   );
   const resolutions = useMemo(() => resolveProducts(draft), [draft]);
   const counts = useMemo(() => slotCounts(draft), [draft]);
@@ -91,6 +94,10 @@ export function GenerateView() {
   });
   const banner = unresolvedCount > 0 ? unresolvedBanner(unresolvedCount) : null;
   const references = me.data?.generation.references;
+  const maxImages = me.data?.generation.imagesPerProduct;
+  const maxVideos = me.data?.generation.videosPerProduct;
+  const effectiveImages = imagesPerProduct ?? maxImages;
+  const effectiveVideos = videosPerProduct ?? maxVideos;
 
   return (
     <s-page heading="New generation">
@@ -120,6 +127,17 @@ export function GenerateView() {
       ) : null}
 
       <AestheticSection styleMode={styleMode} onChange={(mode) => useDraftStore.getState().setStyleMode(mode)} />
+
+      {maxImages !== undefined && maxVideos !== undefined && effectiveImages !== undefined && effectiveVideos !== undefined ? (
+        <OutputCountsSection
+          maxImages={maxImages}
+          maxVideos={maxVideos}
+          imagesPerProduct={effectiveImages}
+          videosPerProduct={effectiveVideos}
+          onImagesChange={(count) => useDraftStore.getState().setImagesPerProduct(count === maxImages ? null : count)}
+          onVideosChange={(count) => useDraftStore.getState().setVideosPerProduct(count === maxVideos ? null : count)}
+        />
+      ) : null}
 
       <CommonReferences
         references={commonRefs}
@@ -152,8 +170,8 @@ export function GenerateView() {
 
       <SummaryAside
         productCount={products.length}
-        imagesPerProduct={me.data?.generation.imagesPerProduct}
-        videosPerProduct={me.data?.generation.videosPerProduct}
+        imagesPerProduct={effectiveImages}
+        videosPerProduct={effectiveVideos}
         readyProducts={products.length - unresolvedCount}
         counts={counts}
       />

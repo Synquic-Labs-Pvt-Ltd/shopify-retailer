@@ -51,7 +51,7 @@ describe('shipped defaults', () => {
 
   it('loads through the service with the shipped prompts', () => {
     const service = createConfigService({ logger, watch: false });
-    expect(service.get().outputs).toEqual({ imagesPerProduct: 2, videosPerProduct: 1 });
+    expect(service.get().outputs).toEqual({ imagesPerProduct: 5, videosPerProduct: 3 });
     expect(service.getPrompt('planner.system').text).toContain('{{imageCount}}');
     expect(service.getPrompt('image.user').text).toContain('{{shot.prompt}}');
     expect(service.getPrompt('video.user').text).toContain('{{shot.cameraMove}}');
@@ -90,12 +90,12 @@ describe('config loader', () => {
     writeFileSync(fixture.configPath, JSON.stringify({ ...defaultGenerationConfig, outputs: { imagesPerProduct: 99, videosPerProduct: 1 } }));
     const invalidShape = service.reload();
     expect(invalidShape.ok).toBe(false);
-    expect(service.get().outputs.imagesPerProduct).toBe(2);
+    expect(service.get().outputs.imagesPerProduct).toBe(5);
 
     writeFileSync(fixture.configPath, '{ not json');
     const invalidJson = service.reload();
     expect(invalidJson.ok).toBe(false);
-    expect(service.get().outputs.imagesPerProduct).toBe(2);
+    expect(service.get().outputs.imagesPerProduct).toBe(5);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

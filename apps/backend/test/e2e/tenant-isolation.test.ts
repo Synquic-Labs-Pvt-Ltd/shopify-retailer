@@ -74,16 +74,16 @@ describe('two merchants share the backend', () => {
 
     aDetail = await getBatch(a, aBatch);
     const bDetail = await getBatch(b, bBatch);
-    expect(aDetail).toMatchObject({ status: 'completed', counts: { products: 2, imagesReady: 4, videosReady: 2 } });
-    expect(bDetail).toMatchObject({ status: 'completed', counts: { products: 1, imagesReady: 2, videosReady: 1 } });
+    expect(aDetail).toMatchObject({ status: 'completed', counts: { products: 2, imagesReady: 10, videosReady: 6 } });
+    expect(bDetail).toMatchObject({ status: 'completed', counts: { products: 1, imagesReady: 5, videosReady: 3 } });
     expect(aDetail.items.map((item) => item.productGid)).toEqual(aGids.slice(0, 2));
     expect(bDetail.items.map((item) => item.productGid)).toEqual(bGids.slice(0, 1));
 
     // Each store received exactly its own references and outputs.
-    expect(e2e.stub.shop(SHOP_A).files.size).toBe(1 + 6);
-    expect(e2e.stub.shop(SHOP_B).files.size).toBe(1 + 3);
+    expect(e2e.stub.shop(SHOP_A).files.size).toBe(1 + 16);
+    expect(e2e.stub.shop(SHOP_B).files.size).toBe(1 + 8);
     const owned = async (client: ApiClient) => MediaAssetModel.countDocuments({ shopId: client.session.shop.id });
-    expect([await owned(a), await owned(b)]).toEqual([7, 4]);
+    expect([await owned(a), await owned(b)]).toEqual([17, 9]);
     expect(e2e.stub.shop(SHOP_A).files.size + e2e.stub.shop(SHOP_B).files.size).toBe(await MediaAssetModel.countDocuments());
 
     // Every Admin call carried the token of its own store, and the stores never shared one.
@@ -126,7 +126,7 @@ describe('one merchant cannot see or use what the other owns', () => {
   it('cannot read, complete, delete or build on the other media', async () => {
     const outputIds = aDetail.items.flatMap((item) => item.outputs.map((output) => output.id));
     const aIds = [aRef().id, ...outputIds];
-    expect(aIds).toHaveLength(7);
+    expect(aIds).toHaveLength(17);
 
     const listed = await b.get(`/api/v1/media?ids=${aIds.join(',')}`);
     expect(listed.status).toBe(200);
@@ -143,8 +143,8 @@ describe('one merchant cannot see or use what the other owns', () => {
     expect(asOutput.status).toBe(400);
 
     // The owner still has everything.
-    expect(mediaListResponseSchema.parse((await a.get(`/api/v1/media?ids=${aIds.join(',')}`)).body).items).toHaveLength(7);
-    expect(e2e.stub.shop(SHOP_A).files.size).toBe(7);
+    expect(mediaListResponseSchema.parse((await a.get(`/api/v1/media?ids=${aIds.join(',')}`)).body).items).toHaveLength(17);
+    expect(e2e.stub.shop(SHOP_A).files.size).toBe(17);
   });
 
   it('keeps tokens bound to their store', async () => {

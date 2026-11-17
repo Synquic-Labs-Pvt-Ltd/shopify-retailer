@@ -44,6 +44,10 @@ export interface DraftData {
   styleMode: StyleMode;
   // Per-product overrides of styleMode, keyed by product id. A product not in here follows styleMode.
   productStyleModes: Record<string, StyleMode>;
+  // Batch-level output counts. null means "follow the shop's configured default" (SPEC: the shop's configured
+  // value is also the ceiling a merchant may ask for).
+  imagesPerProduct: number | null;
+  videosPerProduct: number | null;
 }
 
 export type ToggleResult = 'added' | 'removed' | 'limit';
@@ -64,6 +68,9 @@ export interface DraftActions {
   setStyleMode: (mode: StyleMode) => void;
   // Overrides one product's aesthetic, or clears the override (back to the batch default) with null.
   setProductStyleMode: (productId: string, mode: StyleMode | null) => void;
+  // Sets this batch's output counts, or null to follow the shop's configured default.
+  setImagesPerProduct: (count: number | null) => void;
+  setVideosPerProduct: (count: number | null) => void;
   addRef: (target: ReferenceTarget, ref: DraftReference) => void;
   updateRef: (clientId: string, patch: ReferencePatch) => void;
   removeRef: (clientId: string) => void;

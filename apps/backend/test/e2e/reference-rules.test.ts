@@ -202,7 +202,7 @@ describe('idempotent creation', () => {
     expect([first.status, second.status]).toEqual([201, 201]);
     expect(second.body).toEqual(first.body);
     expect(await batchCount()).toBe(before + 1);
-    expect(await JobModel.countDocuments({ batchId: first.body.id })).toBe(4);
+    expect(await JobModel.countDocuments({ batchId: first.body.id })).toBe(9);
 
     // A repeated key wins over a changed body.
     const changed = await alpha.post('/api/v1/batches', { ...body, products: [{ productGid: gid(4) }] });
@@ -213,7 +213,7 @@ describe('idempotent creation', () => {
     expect(race.map((res) => res.status)).toEqual(Array(5).fill(201));
     expect(new Set(race.map((res) => res.body.id)).size).toBe(1);
     expect(await batchCount()).toBe(before + 2);
-    expect(await JobModel.countDocuments({ batchId: race[0]?.body.id })).toBe(4);
+    expect(await JobModel.countDocuments({ batchId: race[0]?.body.id })).toBe(9);
   });
 
   it('keeps a key private to its shop', async () => {

@@ -97,8 +97,8 @@ describe('what the provider receives for a product with own and common reference
     // as a product video, then only the common references as style: the first 3 images and the first 2 videos by url.
     expect(plan).toHaveBeenCalledTimes(1);
     const planned = defined(plan.mock.calls[0]?.[0]);
-    expect(planned).toMatchObject({ model: 'gemini-2.5-flash', location: 'us-central1', temperature: 0.6, imageCount: 2, videoCount: 1 });
-    expect(planned.systemPrompt).toContain('exactly 2 still image shots and exactly 1 video shots');
+    expect(planned).toMatchObject({ model: 'gemini-2.5-flash', location: 'us-central1', temperature: 0.6, imageCount: 5, videoCount: 3 });
+    expect(planned.systemPrompt).toContain('exactly 5 still image shots and exactly 3 video shots');
     expect(planned.systemPrompt).not.toContain('{{');
     expect(planned.parts.map(describePart)).toEqual([
       'text:PRODUCT DATA',
@@ -117,7 +117,7 @@ describe('what the provider receives for a product with own and common reference
       'text:STYLE REFERENCE IMAGE 3', 'inline:image/jpeg:c3',
       'text:STYLE REFERENCE VIDEO 1', `file:video/mp4:${ref('v1').url}`,
       'text:STYLE REFERENCE VIDEO 2', `file:video/mp4:${ref('v2').url}`,
-      'text:Plan exactly 2 image shots and 1 video shots.',
+      'text:Plan exactly 5 image shots and 3 video shots.',
     ]);
     const header = planned.parts[0];
     const facts = JSON.parse((header?.kind === 'text' ? header.text : '').split('\n').slice(1).join('\n')) as Record<string, unknown>;
@@ -132,7 +132,7 @@ describe('what the provider receives for a product with own and common reference
 
     // Image model (3 inputs): the first common style reference first, then the featured image and the own upload, then
     // the rendered prompt.
-    expect(image).toHaveBeenCalledTimes(2);
+    expect(image).toHaveBeenCalledTimes(5);
     for (const [call] of image.mock.calls) {
       expect(call).toMatchObject({ model: 'gemini-2.5-flash-image', location: 'us-central1', aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' });
       const view = 'the exact product, the same item from another view';
@@ -150,7 +150,7 @@ describe('what the provider receives for a product with own and common reference
     }
 
     // Veo: reference-image mode with three product images and the configured parameters.
-    expect(video).toHaveBeenCalledTimes(1);
+    expect(video).toHaveBeenCalledTimes(3);
     const submitted = defined(video.mock.calls[0]?.[0]);
     expect(submitted).toMatchObject({
       model: 'veo-3.1-generate-001',
@@ -172,12 +172,12 @@ describe('what the provider receives for a product with own and common reference
     const cdn = e2e.stub.state.calls.flatMap((call) => (call.kind === 'cdn' && call.url.includes('/products/') ? [call.url] : []));
     expect(cdn.every((url) => url.includes('width=1536'))).toBe(true);
     const fetched = (suffix: string): number => cdn.filter((url) => url.includes(suffix)).length;
-    expect([1, 2, 3, 4, 5, 6].map((n) => fetched(`ceramic-table-lamp-${n}.jpg`))).toEqual([4, 2, 1, 1, 1, 1]);
+    expect([1, 2, 3, 4, 5, 6].map((n) => fetched(`ceramic-table-lamp-${n}.jpg`))).toEqual([9, 4, 1, 1, 1, 1]);
     // Reference images are downloaded by the planner and the image jobs (2 each); the own upload is also a Veo input.
     // Videos only by url.
     const refFetches = (tag: string): number =>
       e2e.stub.state.calls.filter((call) => call.kind === 'cdn' && call.url.startsWith(defined(ref(tag).url).split('?')[0] ?? '')).length;
-    expect(['o1', 'c1', 'c2', 'c3'].map(refFetches)).toEqual([4, 3, 1, 1]);
+    expect(['o1', 'c1', 'c2', 'c3'].map(refFetches)).toEqual([9, 6, 1, 1]);
     expect(['ov1', 'v1', 'v2', 'v3'].map(refFetches)).toEqual([0, 0, 0, 0]);
     vi.restoreAllMocks();
   }, 90_000);

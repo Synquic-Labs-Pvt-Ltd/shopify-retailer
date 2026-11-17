@@ -85,6 +85,9 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
           set({ productStyleModes: { ...current, [productId]: mode } });
         },
 
+        setImagesPerProduct: (count) => set({ imagesPerProduct: count }),
+        setVideosPerProduct: (count) => set({ videosPerProduct: count }),
+
         addRef: (target, ref) => {
           const state = get();
           set(withRefs(state, target, [...refsOf(state, target), ref]));

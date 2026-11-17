@@ -120,8 +120,8 @@ describe('install and login (HTTP only)', () => {
     const me = meResponseSchema.parse(res.body);
     const config = e2e.config.get();
     expect(me.generation).toEqual({
-      imagesPerProduct: 2,
-      videosPerProduct: 1,
+      imagesPerProduct: 5,
+      videosPerProduct: 3,
       references: config.references,
       maxProductsPerBatch: config.batch.maxProductsPerBatch,
     });
@@ -153,7 +153,7 @@ describe('products', () => {
     expect(res.status).toBe(200);
     expect(productListResponseSchema.parse(res.body).items.map((item) => item.title)).toEqual(['Ceramic Table Lamp', 'Brass Desk Lamp']);
     const search = stub().calls.filter((call) => call.kind === 'graphql' && call.operation === 'ProductList').at(-1);
-    expect(search?.kind === 'graphql' ? search.variables.query : null).toBe('title:*lamp*');
+    expect(search?.kind === 'graphql' ? search.variables.query : null).toBe('(title:*lamp* OR sku:lamp*)');
   });
 
   it('returns a product detail with plain text and resized image urls', async () => {
@@ -249,8 +249,8 @@ describe('batch', () => {
     expect(summary).toMatchObject({
       status: 'queued',
       finishedAt: null,
-      counts: { products: 3, jobsTotal: 12, jobsSucceeded: 0, jobsFailed: 0, jobsCancelled: 0, imagesReady: 0, videosReady: 0 },
-      configSnapshot: { outputs: { imagesPerProduct: 2, videosPerProduct: 1 } },
+      counts: { products: 3, jobsTotal: 27, jobsSucceeded: 0, jobsFailed: 0, jobsCancelled: 0, imagesReady: 0, videosReady: 0 },
+      configSnapshot: { outputs: { imagesPerProduct: 5, videosPerProduct: 3 } },
     });
     expect(summary.coverImageUrl).toContain('/products/ceramic-table-lamp-1.jpg');
     expect(summary.coverImageUrl).toContain('width=1536');
@@ -261,11 +261,11 @@ describe('batch', () => {
     expect(items[1]?.effectiveReferenceMediaIds.map(String)).toEqual([references.commonImage.id, references.commonVideo.id]);
 
     const jobs = await JobModel.find({ batchId }).lean();
-    expect(jobs).toHaveLength(12);
+    expect(jobs).toHaveLength(27);
     const byType = (type: string) => jobs.filter((job) => job.type === type);
     expect(byType('plan').map((job) => [job.status, job.lane])).toEqual(Array(3).fill(['queued', 'fake:gemini-2.5-flash']));
-    expect(byType('image').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(6).fill(['blocked', 'fake:gemini-2.5-flash-image', 1]));
-    expect(byType('video').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(3).fill(['blocked', 'fake:veo-3.1-generate-001', 1]));
+    expect(byType('image').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(15).fill(['blocked', 'fake:gemini-2.5-flash-image', 1]));
+    expect(byType('video').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(9).fill(['blocked', 'fake:veo-3.1-generate-001', 1]));
 
     const list = batchListResponseSchema.parse((await client.get('/api/v1/batches')).body);
     expect(list.items.map((item) => item.id)).toEqual([batchId]);
@@ -279,11 +279,11 @@ describe('batch', () => {
     detail = await getBatch(client, batchId);
   }, 90_000);
 
-  it('reports every product with two images, one video and the right counts', async () => {
+  it('reports every product with five images, three videos and the right counts', async () => {
     expect(detail).toMatchObject({
       status: 'completed',
       delay: null,
-      counts: { products: 3, jobsTotal: 12, jobsSucceeded: 12, jobsFailed: 0, jobsCancelled: 0, imagesReady: 6, videosReady: 3 },
+      counts: { products: 3, jobsTotal: 27, jobsSucceeded: 27, jobsFailed: 0, jobsCancelled: 0, imagesReady: 15, videosReady: 9 },
     });
     expect(detail.finishedAt).not.toBeNull();
     expect(detail.items.map((item) => item.referenceMode)).toEqual(['own_plus_common', 'common_only', 'common_only']);
@@ -297,23 +297,51 @@ describe('batch', () => {
         ['plan', null, 'succeeded', null],
         ['image', 0, 'succeeded', null],
         ['image', 1, 'succeeded', null],
+        ['image', 2, 'succeeded', null],
+        ['image', 3, 'succeeded', null],
+        ['image', 4, 'succeeded', null],
         ['video', 0, 'succeeded', null],
+        ['video', 1, 'succeeded', null],
+        ['video', 2, 'succeeded', null],
       ]);
 
-      expect(item.outputs.map((output) => output.mediaType)).toEqual(['image', 'image', 'video']);
+      expect(item.outputs.map((output) => output.mediaType)).toEqual([
+        'image',
+        'image',
+        'image',
+        'image',
+        'image',
+        'video',
+        'video',
+        'video',
+      ]);
       expect(item.outputs.map((output) => output.filename)).toEqual([
         `rs-${product?.handle}-${batchShort}-img1.jpg`,
         `rs-${product?.handle}-${batchShort}-img2.jpg`,
+        `rs-${product?.handle}-${batchShort}-img3.jpg`,
+        `rs-${product?.handle}-${batchShort}-img4.jpg`,
+        `rs-${product?.handle}-${batchShort}-img5.jpg`,
         `rs-${product?.handle}-${batchShort}-vid1.mp4`,
+        `rs-${product?.handle}-${batchShort}-vid2.mp4`,
+        `rs-${product?.handle}-${batchShort}-vid3.mp4`,
       ]);
-      expect(item.outputs.map((output) => output.shotTitle)).toEqual(['Fake image shot 1', 'Fake image shot 2', 'Fake video shot 1']);
+      expect(item.outputs.map((output) => output.shotTitle)).toEqual([
+        'Fake image shot 1',
+        'Fake image shot 2',
+        'Fake image shot 3',
+        'Fake image shot 4',
+        'Fake image shot 5',
+        'Fake video shot 1',
+        'Fake video shot 2',
+        'Fake video shot 3',
+      ]);
       for (const output of item.outputs) {
         expect(output).toMatchObject({ role: 'output', status: 'ready', productGid: products[index]?.id, scope: null });
         expect(output.url).toMatch(/^https:\/\/cdn\.shopify\.com\//);
         expect(output.previewUrl).not.toBeNull();
       }
       expect(item.outputs[0]).toMatchObject({ width: 16, height: 16 });
-      expect(item.outputs[2]).toMatchObject({ durationSec: 12.5, width: 1080, height: 1920 });
+      expect(item.outputs[5]).toMatchObject({ durationSec: 12.5, width: 1080, height: 1920 });
     }
 
     // The same media are served by GET /media.
@@ -335,10 +363,10 @@ describe('batch', () => {
     const batch = await BatchModel.findById(batchId).lean();
     for (const item of items) {
       expect(item.planSource).toBe('planner');
-      expect(item.creativePlan?.imageShots).toHaveLength(2);
-      expect(item.creativePlan?.videoShots).toHaveLength(1);
-      expect(item.outputMediaIds).toHaveLength(3);
-      expect(item.counts).toMatchObject({ jobsTotal: 4, succeeded: 4, failed: 0, cancelled: 0 });
+      expect(item.creativePlan?.imageShots).toHaveLength(5);
+      expect(item.creativePlan?.videoShots).toHaveLength(3);
+      expect(item.outputMediaIds).toHaveLength(8);
+      expect(item.counts).toMatchObject({ jobsTotal: 9, succeeded: 9, failed: 0, cancelled: 0 });
       expect(item.finishedAt).toBeInstanceOf(Date);
     }
     expect(batch?.startedAt).toBeInstanceOf(Date);
@@ -356,7 +384,7 @@ describe('batch', () => {
     }
     expect(jobs.filter((job) => job.type === 'plan').every((job) => job.output?.providerResponseId?.startsWith('fake-plan-'))).toBe(true);
     const outputs = await MediaAssetModel.find({ batchId, role: 'output' }).lean();
-    expect(outputs).toHaveLength(9);
+    expect(outputs).toHaveLength(24);
     for (const output of outputs) {
       const item = items.find((candidate) => candidate._id.equals(output.batchItemId));
       expect(output.sourceJobId).toBeInstanceOf(Types.ObjectId);
@@ -366,10 +394,10 @@ describe('batch', () => {
 
   it('fetched the references the way the spec describes', async () => {
     const fetched = (url: string): number => stub().calls.filter((call) => call.kind === 'cdn' && call.url.startsWith(without(url)) && call.status === 200).length;
-    // The first product's own upload is one more photo of that product: the plan, its 2 image jobs and its video use it.
-    expect(fetched(references.ownImage.url ?? '')).toBe(4);
-    // Every product uses the common image as style, in the plan and the 2 image jobs.
-    expect(fetched(references.commonImage.url ?? '')).toBe(9);
+    // The first product's own upload is one more photo of that product: the plan, its 5 image jobs and its 3 video jobs use it.
+    expect(fetched(references.ownImage.url ?? '')).toBe(9);
+    // Every product uses the common image as style, in the plan and the 5 image jobs.
+    expect(fetched(references.commonImage.url ?? '')).toBe(18);
     // Reference videos reach the planner by public url only.
     expect(fetched(references.commonVideo.url ?? '')).toBe(0);
     expect(stub().calls.filter((call) => call.kind === 'cdn' && call.status !== 200)).toEqual([]);
@@ -381,19 +409,19 @@ describe('what Shopify saw', () => {
     const operations = e2e.stub.graphqlOperations();
     const count = (name: string): number => operations.filter((operation) => operation === name).length;
     // One staged call for the three references, then one per output.
-    expect(count('StagedUploadsCreate')).toBe(1 + 9);
-    expect(count('FileCreate')).toBe(3 + 9);
+    expect(count('StagedUploadsCreate')).toBe(1 + 24);
+    expect(count('FileCreate')).toBe(3 + 24);
     expect(count('FileDelete')).toBe(0);
     expect([...new Set(operations)].sort()).toEqual(
       ['FileCreate', 'FileStatus', 'ProductDetail', 'ProductList', 'ProductSnapshots', 'ShopInfo', 'StagedUploadsCreate'].sort(),
     );
 
     const shop = e2e.stub.shop(SHOP);
-    expect(shop.files.size).toBe(12);
+    expect(shop.files.size).toBe(27);
     const files = [...shop.files.values()];
     const outputs = files.filter((file) => !file.filename.startsWith('rs-ref-'));
-    expect(outputs).toHaveLength(9);
-    expect(outputs.filter((file) => file.mediaType === 'image').map((file) => file.filename)).toHaveLength(6);
+    expect(outputs).toHaveLength(24);
+    expect(outputs.filter((file) => file.mediaType === 'image').map((file) => file.filename)).toHaveLength(15);
     expect(outputs.filter((file) => file.mediaType === 'video').every((file) => file.filename.endsWith('.mp4'))).toBe(true);
     const titles = detail.items.map((item) => item.title);
     for (const file of outputs) expect(titles.some((title) => file.alt.startsWith(`${title}: Fake `))).toBe(true);
@@ -401,7 +429,7 @@ describe('what Shopify saw', () => {
 
     // The bytes that reached Shopify are the ones the provider produced.
     const staged = [...shop.stagedByKey.values()];
-    expect(staged).toHaveLength(12);
+    expect(staged).toHaveLength(27);
     expect(staged.every((target) => target.received !== null)).toBe(true);
     expect(staged.filter((target) => target.resource === 'VIDEO').every((target) => target.received?.bytes.byteLength === FAKE_MP4.byteLength)).toBe(true);
     expect(staged.filter((target) => target.resource === 'IMAGE').every((target) => target.received?.bytes[0] === 0xff && target.received.bytes[1] === 0xd8)).toBe(true);

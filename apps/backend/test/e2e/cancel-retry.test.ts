@@ -49,7 +49,7 @@ describe('cancel', () => {
     const batchId = await newBatch([0, 1]);
     const res = await client.post(`/api/v1/batches/${batchId}/cancel`);
     expect(res.status).toBe(200);
-    expect(batchSummarySchema.parse(res.body)).toMatchObject({ status: 'cancelled', counts: { jobsTotal: 8, jobsCancelled: 8, jobsSucceeded: 0 } });
+    expect(batchSummarySchema.parse(res.body)).toMatchObject({ status: 'cancelled', counts: { jobsTotal: 18, jobsCancelled: 18, jobsSucceeded: 0 } });
 
     const calls = e2e.stub.state.calls.length;
     for (let tick = 0; tick < 5; tick += 1) await e2e.tick();
@@ -58,7 +58,7 @@ describe('cancel', () => {
     const detail = await getBatch(client, batchId);
     expect(detail.finishedAt).not.toBeNull();
     expect(detail.items.map((item) => item.status)).toEqual(['cancelled', 'cancelled']);
-    expect(detail.items.flatMap((item) => item.jobs.map((job) => job.errorCode))).toEqual(Array(8).fill('cancelled'));
+    expect(detail.items.flatMap((item) => item.jobs.map((job) => job.errorCode))).toEqual(Array(18).fill('cancelled'));
 
     // Cancelling again is harmless, a finished batch cannot be retried, and unknown ids are 404.
     expect((await client.post(`/api/v1/batches/${batchId}/cancel`)).status).toBe(200);
@@ -95,7 +95,7 @@ describe('cancel', () => {
     expect(jobs.every((job) => ['succeeded', 'cancelled'].includes(job.status))).toBe(true);
     const succeededImages = jobs.filter((job) => job.type === 'image' && job.status === 'succeeded');
     expect(succeededImages.length).toBeGreaterThanOrEqual(1);
-    expect(succeededImages.length).toBeLessThan(6);
+    expect(succeededImages.length).toBeLessThan(15);
     expect(jobs.filter((job) => job.status === 'cancelled').length).toBe(detail.counts.jobsCancelled);
     expect(detail.counts.jobsFailed).toBe(0);
 
@@ -126,10 +126,10 @@ describe('retry failed', () => {
     await e2e.settle();
 
     const detail = await getBatch(client, batchId);
-    expect(detail.counts).toMatchObject({ jobsTotal: 12, jobsSucceeded: 11, jobsFailed: 1, imagesReady: 5, videosReady: 3 });
+    expect(detail.counts).toMatchObject({ jobsTotal: 27, jobsSucceeded: 26, jobsFailed: 1, imagesReady: 14, videosReady: 9 });
     expect(detail.items.map((item) => item.status)).toEqual(['completed', 'completed', 'partial']);
     const partial = defined(detail.items[2]);
-    expect(partial.outputs).toHaveLength(2);
+    expect(partial.outputs).toHaveLength(7);
     expect(partial.jobs.find((job) => job.status === 'failed')).toMatchObject({ type: 'image', outputIndex: 1, errorCode: 'shopify_upload_failed' });
 
     const failedJob = defined(await JobModel.findOne({ batchId, status: 'failed' }).lean());
@@ -140,7 +140,7 @@ describe('retry failed', () => {
     e2e.stub.state.knobs.fileCreateRejection = null;
     const retried = await client.post(`/api/v1/batches/${batchId}/retry-failed`);
     expect(retried.status).toBe(200);
-    expect(batchSummarySchema.parse(retried.body)).toMatchObject({ status: 'running', finishedAt: null, counts: { jobsFailed: 0, jobsSucceeded: 11 } });
+    expect(batchSummarySchema.parse(retried.body)).toMatchObject({ status: 'running', finishedAt: null, counts: { jobsFailed: 0, jobsSucceeded: 26 } });
     expect(await JobModel.findById(failedJob._id).lean()).toMatchObject({ status: 'queued', attempts: 0 });
     expect(errorOf(await client.post(`/api/v1/batches/${batchId}/retry-failed`)).code).toBe('validation_failed');
 
@@ -148,9 +148,18 @@ describe('retry failed', () => {
     expect(finished.status).toBe('completed');
     await e2e.settle();
     const after = await getBatch(client, batchId);
-    expect(after.counts).toMatchObject({ jobsSucceeded: 12, jobsFailed: 0, imagesReady: 6, videosReady: 3 });
+    expect(after.counts).toMatchObject({ jobsSucceeded: 27, jobsFailed: 0, imagesReady: 15, videosReady: 9 });
     expect(after.items.map((item) => item.status)).toEqual(['completed', 'completed', 'completed']);
-    expect(defined(after.items[2]).outputs.map((output) => output.filename.replace(/^rs-oak-side-table-[0-9a-f]{6}-/, ''))).toEqual(['img1.jpg', 'img2.jpg', 'vid1.mp4']);
+    expect(defined(after.items[2]).outputs.map((output) => output.filename.replace(/^rs-oak-side-table-[0-9a-f]{6}-/, ''))).toEqual([
+      'img1.jpg',
+      'img2.jpg',
+      'img3.jpg',
+      'img4.jpg',
+      'img5.jpg',
+      'vid1.mp4',
+      'vid2.mp4',
+      'vid3.mp4',
+    ]);
 
     // The recovered output reuses its media record: one record per job, now ready.
     expect(await MediaAssetModel.countDocuments({ sourceJobId: failedJob._id })).toBe(1);
@@ -173,7 +182,7 @@ describe('retry failed', () => {
     ]);
     expect(defined(detail.items[1]).outputs).toEqual([]);
     expect(defined(detail.items[1]).jobs.every((job) => job.status === 'failed' && job.errorCode === 'transient')).toBe(true);
-    expect(detail.counts).toMatchObject({ jobsFailed: 4, jobsSucceeded: 8 });
+    expect(detail.counts).toMatchObject({ jobsFailed: 9, jobsSucceeded: 18 });
     // A failed planner never blocks the outputs of a product that can still be generated: its siblings are untouched.
     expect((await BatchItemModel.find({ batchId }).sort({ _id: 1 }).lean()).map((item) => item.planSource)).toEqual(['planner', 'fallback', 'planner']);
 
@@ -184,7 +193,7 @@ describe('retry failed', () => {
     await e2e.settle();
     const after = await getBatch(client, batchId);
     expect(after.items.map((item) => item.status)).toEqual(['completed', 'completed', 'completed']);
-    expect(defined(after.items[1]).outputs).toHaveLength(3);
+    expect(defined(after.items[1]).outputs).toHaveLength(8);
   }, 120_000);
 });
 
@@ -206,13 +215,13 @@ describe('Shopify revokes the token while a batch runs', () => {
     expect((await client.get(`/api/v1/batches/${batchId}`)).status).toBe(409);
     client = await login(e2e, SHOP);
     const detail = await getBatch(client, batchId);
-    expect(detail.counts).toMatchObject({ jobsFailed: 3, jobsSucceeded: 1 });
+    expect(detail.counts).toMatchObject({ jobsFailed: 8, jobsSucceeded: 1 });
 
     expect((await client.post(`/api/v1/batches/${batchId}/retry-failed`)).status).toBe(200);
     expect((await e2e.driveBatch(batchId, { timeoutMs: 60_000 })).status).toBe('completed');
     await e2e.settle();
     const after = await getBatch(client, batchId);
-    expect(after.items[0]?.outputs).toHaveLength(3);
+    expect(after.items[0]?.outputs).toHaveLength(8);
     expect(after.items[0]?.outputs.every((output) => output.status === 'ready')).toBe(true);
   }, 120_000);
 });

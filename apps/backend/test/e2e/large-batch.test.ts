@@ -37,14 +37,14 @@ describe('a batch of the maximum size', () => {
     expect(e2e.stub.graphqlOperations(SHOP)).not.toContain('ProductSnapshots');
   });
 
-  it('snapshots the products in chunks, creates every job and generates all 150 outputs', async () => {
+  it('snapshots the products in chunks, creates every job and generates all 400 outputs', async () => {
     const res = await createBatch(client, body(50));
     expect(res.status).toBe(201);
     const summary = batchSummarySchema.parse(res.body);
-    expect(summary.counts).toMatchObject({ products: 50, jobsTotal: 200 });
+    expect(summary.counts).toMatchObject({ products: 50, jobsTotal: 450 });
     // 50 gids go to Shopify in chunks of 20.
     expect(e2e.stub.graphqlOperations(SHOP).filter((operation) => operation === 'ProductSnapshots')).toHaveLength(3);
-    expect(await JobModel.countDocuments({ batchId: summary.id })).toBe(200);
+    expect(await JobModel.countDocuments({ batchId: summary.id })).toBe(450);
     expect(await BatchItemModel.countDocuments({ batchId: summary.id })).toBe(50);
 
     const batch = await e2e.driveBatch(summary.id, { timeoutMs: 120_000, intervalMs: 50 });
@@ -52,13 +52,13 @@ describe('a batch of the maximum size', () => {
     await e2e.settle();
 
     const detail = await getBatch(client, summary.id);
-    expect(detail.counts).toMatchObject({ jobsSucceeded: 200, jobsFailed: 0, imagesReady: 100, videosReady: 50 });
+    expect(detail.counts).toMatchObject({ jobsSucceeded: 450, jobsFailed: 0, imagesReady: 250, videosReady: 150 });
     expect(detail.items).toHaveLength(50);
-    expect(detail.items.every((item) => item.status === 'completed' && item.outputs.length === 3)).toBe(true);
+    expect(detail.items.every((item) => item.status === 'completed' && item.outputs.length === 8)).toBe(true);
     expect(detail.items.map((item) => item.productGid)).toEqual(gids.slice(0, 50));
     const jobs = await JobModel.find({ batchId: summary.id }).lean();
     expect(jobs.every((job) => job.attempts === 1 && job.deferrals === 0)).toBe(true);
-    expect(e2e.stub.shop(SHOP).files.size).toBe(1 + 150);
+    expect(e2e.stub.shop(SHOP).files.size).toBe(1 + 400);
     expect(e2e.problems(['released blocked jobs whose dependencies were already terminal'])).toEqual([]);
   }, 180_000);
 });

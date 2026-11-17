@@ -89,7 +89,10 @@ function readyMediaIds(refs: readonly DraftReference[]): string[] {
 
 // POST /batches body for the draft. Only ready slots are sent; call it when allSlotsReady is true. The
 // batch-level styleMode goes on the body; a product carries its own styleMode only when it overrides the default.
-export function buildBatchRequest(draft: StyleDraft & Pick<DraftData, 'idempotencyKey'>): CreateBatchInput {
+// imagesPerProduct/videosPerProduct are omitted when the draft follows the shop's configured default (null).
+export function buildBatchRequest(
+  draft: StyleDraft & Pick<DraftData, 'idempotencyKey' | 'imagesPerProduct' | 'videosPerProduct'>,
+): CreateBatchInput {
   return {
     idempotencyKey: draft.idempotencyKey,
     styleMode: draft.styleMode,
@@ -102,5 +105,7 @@ export function buildBatchRequest(draft: StyleDraft & Pick<DraftData, 'idempoten
       };
     }),
     commonReferenceMediaIds: readyMediaIds(draft.commonRefs),
+    ...(draft.imagesPerProduct !== null ? { imagesPerProduct: draft.imagesPerProduct } : {}),
+    ...(draft.videosPerProduct !== null ? { videosPerProduct: draft.videosPerProduct } : {}),
   };
 }

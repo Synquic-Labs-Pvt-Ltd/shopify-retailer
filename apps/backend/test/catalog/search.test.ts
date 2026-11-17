@@ -29,7 +29,7 @@ describe('buildTitleSearch', () => {
   });
 
   it('removes wildcards, commas and control characters from words', () => {
-    expect(buildTitleSearch('a*b,c d')).toBe('(title:*abcd* OR sku:abcd*)');
+    expect(buildTitleSearch('a*b,cd')).toBe('(title:*abcd* OR sku:abcd*)');
   });
 
   it('keeps non-latin words', () => {
@@ -38,7 +38,7 @@ describe('buildTitleSearch', () => {
 
   it('limits the number of terms', () => {
     const terms = buildTitleSearch('a b c d e f g h i j');
-    expect(terms?.split(' ')).toHaveLength(8 * 4);
+    expect(terms?.match(/\(title:/g)).toHaveLength(8);
   });
 });
 

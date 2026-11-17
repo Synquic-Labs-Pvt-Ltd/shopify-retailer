@@ -230,7 +230,17 @@ describe('persistence', () => {
     const saved = JSON.parse(storage.getItem(DRAFT_STORAGE_KEY) as string) as { state: object; version: number };
     expect(saved.version).toBe(2);
     expect(Object.keys(saved.state).sort()).toEqual(
-      ['commonRefs', 'idempotencyKey', 'productRefs', 'productStyleModes', 'products', 'shopId', 'styleMode'].sort(),
+      [
+        'commonRefs',
+        'idempotencyKey',
+        'imagesPerProduct',
+        'productRefs',
+        'productStyleModes',
+        'products',
+        'shopId',
+        'styleMode',
+        'videosPerProduct',
+      ].sort(),
     );
   });
 

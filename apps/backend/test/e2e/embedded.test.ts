@@ -51,7 +51,7 @@ describe('first open of the app inside the Shopify admin', () => {
     const me = meResponseSchema.parse(responses[0]?.body);
     expect(me.shop).toMatchObject({ domain: SHOP, name: e2e.stub.shop(SHOP).info.name });
     expect(me.user).toMatchObject({ email: null, firstName: null, lastName: null });
-    expect(me.generation.imagesPerProduct).toBe(2);
+    expect(me.generation.imagesPerProduct).toBe(5);
     shopId = me.shop.id;
 
     const shop = defined(await rawShop());
@@ -118,8 +118,17 @@ describe('working in the embedded app', () => {
     await e2e.settle();
 
     const detail = await getBatch(client, batchId);
-    expect(detail).toMatchObject({ status: 'completed', counts: { products: 1, jobsSucceeded: 4, jobsFailed: 0, imagesReady: 2, videosReady: 1 } });
-    expect(detail.items[0]?.outputs.map((output) => output.mediaType)).toEqual(['image', 'image', 'video']);
+    expect(detail).toMatchObject({ status: 'completed', counts: { products: 1, jobsSucceeded: 9, jobsFailed: 0, imagesReady: 5, videosReady: 3 } });
+    expect(detail.items[0]?.outputs.map((output) => output.mediaType)).toEqual([
+      'image',
+      'image',
+      'image',
+      'image',
+      'image',
+      'video',
+      'video',
+      'video',
+    ]);
     expect((await client.get('/api/v1/batches')).status).toBe(200);
   }, 90_000);
 

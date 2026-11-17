@@ -28,10 +28,13 @@ import { createScriptedAi, type ScriptedAi } from './scripted-ai';
 
 export const silent = pino({ level: 'silent' });
 
+// outputs is pinned to a small, deterministic count: these tests exercise retry, polling, counters and
+// idempotency mechanics job by job, not the shop's configured output counts (covered by config.test.ts).
 export function testConfig(): GenerationConfig {
   const base = structuredClone(defaultGenerationConfig);
   return {
     ...base,
+    outputs: { imagesPerProduct: 2, videosPerProduct: 1 },
     provider: 'fake',
     models: { planner: 'fake-planner', image: 'fake-image', video: 'fake-video' },
     fake: { latencyMs: 0, rateLimitProbability: 0 },

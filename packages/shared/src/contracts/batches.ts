@@ -75,6 +75,11 @@ export const createBatchRequestSchema = z
     // The aesthetic source for every product that does not set its own. Defaults to reference so the mobile
     // app and older clients keep today's behaviour (a reference is required).
     styleMode: styleModeSchema.default('reference'),
+    // Overrides the shop's configured imagesPerProduct/videosPerProduct for this batch only. Omitted means the
+    // shop's configured default applies. The shop's configured value is also the ceiling: the server rejects a
+    // request that asks for more than the shop currently allows.
+    imagesPerProduct: outputsConfigSchema.shape.imagesPerProduct.optional(),
+    videosPerProduct: outputsConfigSchema.shape.videosPerProduct.optional(),
   })
   .refine((body) => new Set(body.products.map((p) => p.productGid)).size === body.products.length, {
     message: 'Each product may appear only once',

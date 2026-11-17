@@ -44,8 +44,15 @@ afterAll(async () => {
   await e2e.stop();
 });
 
+// Pinned to the old small counts: these tests mock exact call sequences (which call fails, which retries),
+// not the shop's configured output counts.
 async function newBatch(productIndex: number): Promise<string> {
-  const res = await createBatch(client, { products: [{ productGid: defined(gids[productIndex]) }], commonReferenceMediaIds: [reference.id] });
+  const res = await createBatch(client, {
+    products: [{ productGid: defined(gids[productIndex]) }],
+    commonReferenceMediaIds: [reference.id],
+    imagesPerProduct: 2,
+    videosPerProduct: 1,
+  });
   expect(res.status).toBe(201);
   return batchSummarySchema.parse(res.body).id;
 }

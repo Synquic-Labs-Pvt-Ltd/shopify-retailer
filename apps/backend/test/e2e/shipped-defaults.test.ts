@@ -52,7 +52,7 @@ describe('the shipped queue settings and lanes with the timer driven runner', ()
     expect(seconds).toBeGreaterThan(30);
     expect(seconds).toBeLessThan(90);
     const detail = await getBatch(client, batchId);
-    expect(detail.counts).toMatchObject({ jobsSucceeded: 8, imagesReady: 4, videosReady: 2 });
+    expect(detail.counts).toMatchObject({ jobsSucceeded: 18, imagesReady: 10, videosReady: 6 });
     const jobs = await JobModel.find({ batchId }).lean();
     expect(jobs.every((job) => job.attempts === 1 && job.deferrals === 0)).toBe(true);
     expect(healthResponseSchema.parse((await request(e2e.app).get('/health')).body).pausedLanes).toEqual([]);

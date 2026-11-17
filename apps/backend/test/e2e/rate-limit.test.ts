@@ -29,10 +29,14 @@ afterAll(async () => {
   await e2e.stop();
 });
 
+// Pinned to the old small counts: these tests pace and count exact calls against the lane limits, not the
+// shop's configured output counts.
 async function newBatch(productCount: number): Promise<string> {
   const res = await createBatch(client, {
     products: gids.slice(0, productCount).map((productGid) => ({ productGid })),
     commonReferenceMediaIds: [reference.id],
+    imagesPerProduct: 2,
+    videosPerProduct: 1,
   });
   expect(res.status).toBe(201);
   return batchSummarySchema.parse(res.body).id;

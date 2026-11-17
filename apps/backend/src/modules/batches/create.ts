@@ -5,6 +5,7 @@ import {
   type BatchConfigSnapshot,
   type BatchSummary,
   type CreateBatchInput,
+  type CreateBatchRequest,
   type GenerationConfig,
   type ProductSnapshot,
 } from '@rs/shared';
@@ -40,6 +41,20 @@ export function freezeConfig(
 
 export function jobsPerProduct(outputs: GenerationConfig['outputs']): number {
   return 1 + outputs.imagesPerProduct + outputs.videosPerProduct;
+}
+
+// A batch may ask for fewer images/videos than the shop's configured default, never more: the configured
+// value is the per-shop ceiling (rate limits and daily quotas are sized against it).
+function resolveOutputs(request: CreateBatchRequest, configured: GenerationConfig['outputs']): GenerationConfig['outputs'] {
+  const imagesPerProduct = request.imagesPerProduct ?? configured.imagesPerProduct;
+  const videosPerProduct = request.videosPerProduct ?? configured.videosPerProduct;
+  if (imagesPerProduct > configured.imagesPerProduct) {
+    throw AppError.validation(`imagesPerProduct cannot exceed ${configured.imagesPerProduct}`);
+  }
+  if (videosPerProduct > configured.videosPerProduct) {
+    throw AppError.validation(`videosPerProduct cannot exceed ${configured.videosPerProduct}`);
+  }
+  return { imagesPerProduct, videosPerProduct };
 }
 
 const ids = (values: readonly string[]): Types.ObjectId[] => values.map((value) => new Types.ObjectId(value));
@@ -97,8 +112,10 @@ export function createBatchCreator(deps: CreateDeps) {
     if (replay !== null) return toSummary(replay);
 
     const config = deps.getConfig();
+    const outputs = resolveOutputs(request, config.outputs);
+    const effectiveConfig = { ...config, outputs };
     const resolved = resolveRequest(request, config.references);
-    const jobsTotal = resolved.products.length * jobsPerProduct(config.outputs);
+    const jobsTotal = resolved.products.length * jobsPerProduct(outputs);
     const at = now();
     await assertAdmission(actor.shopId, { products: resolved.products.length, jobs: jobsTotal }, config.batch, at);
 
@@ -114,7 +131,7 @@ export function createBatchCreator(deps: CreateDeps) {
     }
 
     const promptRefs = (await deps.getPromptRefs?.(actor.shopId)) ?? { planner: 0, image: 0, video: 0 };
-    const snapshot = freezeConfig(config, deps.getPromptVersions(), promptRefs);
+    const snapshot = freezeConfig(effectiveConfig, deps.getPromptVersions(), promptRefs);
     const shopId = new Types.ObjectId(actor.shopId);
     let batch: BatchDoc;
     try {

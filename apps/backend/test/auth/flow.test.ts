@@ -451,8 +451,8 @@ describe('requireAuth and GET /api/v1/me', () => {
     expect(body.user.email).toBe('asha@example.com');
     expect(body.shop).toEqual({ id: session.shop.id, domain: SHOP, name: 'Demo Store' });
     expect(body.generation).toMatchObject({
-      imagesPerProduct: 2,
-      videosPerProduct: 1,
+      imagesPerProduct: 5,
+      videosPerProduct: 3,
       maxProductsPerBatch: 50,
       references: { maxPerProduct: 5, maxCommon: 10 },
     });
