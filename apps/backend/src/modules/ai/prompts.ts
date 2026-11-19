@@ -1,3 +1,4 @@
+import { backImageShotIndex } from '@rs/shared';
 import type {
   CreativePlan,
   GenerationConfig,
@@ -90,6 +91,14 @@ export const PRODUCT_IMAGES_NOTE =
 export const STYLE_REFERENCES_NOTE =
   'The STYLE REFERENCES below are the look to match: recreate their setting, environment, set dressing and props, color palette and grading, lighting, mood, composition and motion closely, and stage similar props so the result belongs to the same shoot. Do not put their clothing on the model, and do not reproduce brand names, logos, readable text, identifiable people, or a different product they show.';
 
+// Tells the planner which image shot is the back view. It is sent with the request, not only written in the system
+// prompt, so a store's own planner prompt version cannot lose the rule.
+export function backShotPlannerNote(imageCount: number): string | null {
+  const index = backImageShotIndex(imageCount);
+  if (index === null) return null;
+  return `Image shot ${index + 1} of ${imageCount} (the last image shot) is the mandatory back view: plan it as a photograph taken from behind, with the back of the product facing the camera, and say "back view" in its camera field. Image shot 1 stays the front hero.`;
+}
+
 // The product facts the planner may use. Image URLs add nothing for the model and are left out.
 function productData(snapshot: ProductSnapshot): string {
   return JSON.stringify(
@@ -132,6 +141,8 @@ export function buildPlannerParts(input: PlannerPartsInput, config: GenerationCo
     parts.push(text(`STYLE REFERENCE VIDEO ${index + 1}`), videoPart(video));
   });
   parts.push(text(`Plan exactly ${input.counts.imageCount} image shots and ${input.counts.videoCount} video shots.`));
+  const backNote = backShotPlannerNote(input.counts.imageCount);
+  if (backNote !== null) parts.push(text(backNote));
   return parts;
 }
 
@@ -196,6 +207,12 @@ export const SAFE_VIDEO_NOTE =
 export const SCENE_REFERENCE_NOTE =
   'Scene brief: take the outfit from the PRODUCT IMAGES and place it on a model inside the scene of STYLE REFERENCE 1. Rebuild that scene: the same kind of backdrop (color, texture, floor), the same kinds of props and how they are arranged, the same lighting direction and quality, color palette, camera distance and framing, and the same mood. The outfit appears exactly as shown in the PRODUCT IMAGES. The person in the style reference only stands in for the pose and framing: use a different adult model with their own face, and replace every garment, shoe and accessory they wear with the product outfit. Logos, brand names and readable text from the style reference stay out of the image.';
 
+// Added to the last image shot of every product, whatever the planner wrote and whichever prompt version rendered it
+// (merchant request: every product gets one back image). It overrides front-facing wording in the shot and works for
+// a worn garment and for the no-person presentation of the safer retry alike.
+export const BACK_VIEW_NOTE =
+  'Back view: this photograph shows the BACK of the product, and the back faces the camera. Where a model wears it, the model stands with their back to the camera, facing away, framed head to toe, so the back of every worn piece (back panel, closures, seams, prints, hemline) is fully visible. Where no person appears (a mannequin, a hanger, a flat lay or an object), the back side of the product faces the camera squarely. This overrides any front-facing wording above. Take the back details from the PRODUCT IMAGES that show the back; if none of them does, keep the back plain and consistent with the front, with no logos, prints or text of your own.';
+
 // Every generated image and video is shot in deep focus, with a sharp background (merchant request). The notes say
 // what the frame looks like; the models follow a positive description better than a list of "no" (SPEC 12.7).
 export const FOCUS_NOTE_IMAGE =
@@ -230,6 +247,8 @@ export interface RenderOptions {
   safe?: boolean;
   // The image model gets a style reference, so the prompt carries the scene brief (images only).
   scene?: boolean;
+  // This is the product's mandatory back-view image shot (images only).
+  back?: boolean;
 }
 
 export function renderImagePrompt(
@@ -248,7 +267,12 @@ export function renderImagePrompt(
     'plan.product.mustPreserve': plan.product.mustPreserve.join('; '),
     'image.aspectRatio': config.image.aspectRatio,
   });
-  const notes = [options.scene === true && options.safe !== true ? SCENE_REFERENCE_NOTE : null, FOCUS_NOTE_IMAGE, options.safe === true ? SAFE_IMAGE_NOTE : null];
+  const notes = [
+    options.scene === true && options.safe !== true ? SCENE_REFERENCE_NOTE : null,
+    options.back === true ? BACK_VIEW_NOTE : null,
+    FOCUS_NOTE_IMAGE,
+    options.safe === true ? SAFE_IMAGE_NOTE : null,
+  ];
   return [rendered, ...notes.filter((note): note is string => note !== null)].join('\n\n');
 }
 
@@ -263,8 +287,9 @@ export function renderVideoPrompt(template: string, plan: CreativePlan, shot: Vi
   return `${rendered} ${FOCUS_NOTE_VIDEO}${options.safe === true ? ` ${SAFE_VIDEO_NOTE}` : ''}`;
 }
 
-// Deterministic plan used when the planner job fails (SPEC 12.5). Shots 1 and 2 follow the SPEC wording;
-// further image shots (up to 6) cycle through other framings so they stay distinct.
+// Deterministic plan used when the planner job fails (SPEC 12.5). Shots 1 and 2 follow the SPEC wording; further image
+// shots (up to 6) cycle through other framings so they stay distinct. The last image shot is the back view whenever
+// the batch has two or more images (backImageShotIndex), so the fallback plan keeps the back-image guarantee.
 const IMAGE_FRAMINGS = [
   { title: 'Hero shot', framing: 'eye-level 50mm framing', camera: 'Eye-level, 50mm lens, product centered' },
   { title: 'Close detail', framing: 'close detail framing at 85mm', camera: 'Close detail, 85mm lens, deep depth of field, everything in sharp focus' },
@@ -272,8 +297,13 @@ const IMAGE_FRAMINGS = [
   { title: 'Three-quarter angle', framing: 'three-quarter angle at 50mm', camera: 'Three-quarter angle, 50mm lens' },
   { title: 'Low angle', framing: 'low angle framing at 35mm', camera: 'Low angle, 35mm lens' },
   { title: 'Overhead view', framing: 'overhead framing at 50mm', camera: 'Overhead, 50mm lens, product centered' },
-  { title: 'Back view', framing: 'rear view framing at 50mm', camera: 'Eye-level, 50mm lens, rear view, showing the back of the product' },
 ] as const;
+
+const BACK_FRAMING = {
+  title: 'Back view',
+  framing: 'rear view framing at 50mm',
+  camera: 'Eye-level, 50mm lens, back view, the back of the product facing the camera',
+} as const;
 
 const VIDEO_MOVES = [
   'slow push-in toward the product',
@@ -335,8 +365,10 @@ export function buildFallbackPlan(
   const FALLBACK_SETTING = style.setting;
   const FALLBACK_BACKDROP = style.backdrop;
 
+  const backIndex = backImageShotIndex(counts.imageCount);
   const imageShots: ImageShot[] = Array.from({ length: counts.imageCount }, (_unused, index) => {
-    const framing = IMAGE_FRAMINGS[index % IMAGE_FRAMINGS.length] ?? IMAGE_FRAMINGS[0];
+    const isBack = index === backIndex;
+    const framing = isBack ? BACK_FRAMING : (IMAGE_FRAMINGS[index % IMAGE_FRAMINGS.length] ?? IMAGE_FRAMINGS[0]);
     return {
       shotId: `fallback-image-${index + 1}`,
       title: framing.title,
@@ -344,7 +376,9 @@ export function buildFallbackPlan(
       camera: framing.camera,
       lighting: 'Soft natural window light',
       people: 'none',
-      prompt: `${phrase}, displayed as the hero in ${FALLBACK_SETTING}, ${FALLBACK_LOOK}, ${framing.framing}, ${FALLBACK_BACKDROP}.`,
+      prompt: isBack
+        ? `${phrase}, seen from behind with its back facing the camera in ${FALLBACK_SETTING}, ${FALLBACK_LOOK}, ${framing.framing}, ${FALLBACK_BACKDROP}.`
+        : `${phrase}, displayed as the hero in ${FALLBACK_SETTING}, ${FALLBACK_LOOK}, ${framing.framing}, ${FALLBACK_BACKDROP}.`,
       negative: 'text, watermark, distorted product, duplicate products',
     };
   });

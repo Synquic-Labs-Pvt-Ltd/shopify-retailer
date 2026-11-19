@@ -86,6 +86,15 @@ export interface PlanCounts {
   videoCount: number;
 }
 
+// Every product gets one back-view image. It is always the last image shot, so shot 1 stays the front hero. With a
+// single image the merchant asked for just one picture and it stays the hero, so the rule starts at two.
+export const MIN_IMAGES_FOR_BACK_SHOT = 2;
+
+// The zero-based index of the mandatory back-view image shot, or null when the batch has too few images for one.
+export function backImageShotIndex(imageCount: number): number | null {
+  return imageCount >= MIN_IMAGES_FOR_BACK_SHOT ? imageCount - 1 : null;
+}
+
 // The planner must return exactly imageCount image shots and videoCount video shots.
 export function createCreativePlanSchema(counts: PlanCounts) {
   return creativePlanSchema.extend({

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   ERROR_CODES,
+  MIN_IMAGES_FOR_BACK_SHOT,
   ERROR_HTTP_STATUS,
   authExchangeRequestSchema,
+  backImageShotIndex,
   createBatchRequestSchema,
   createCreativePlanSchema,
   creativePlanSchema,
@@ -70,6 +72,11 @@ describe('generation config', () => {
 describe('creative plan', () => {
   it('accepts a short fallback-style plan', () => {
     expect(creativePlanSchema.safeParse(plan).success).toBe(true);
+  });
+
+  it('puts the mandatory back view on the last image shot from two images up', () => {
+    expect(MIN_IMAGES_FOR_BACK_SHOT).toBe(2);
+    expect([0, 1, 2, 3, 5, 6].map(backImageShotIndex)).toEqual([null, null, 1, 2, 4, 5]);
   });
 
   it('enforces exact shot counts and the title limit', () => {

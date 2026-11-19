@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { batchSummarySchema, type MediaObject } from '@rs/shared';
 import { classifyAiError, type AiPart } from '../../src/modules/ai';
-import { PRODUCT_IMAGES_NOTE, STYLE_REFERENCES_NOTE, STYLE_REFERENCE_LABEL } from '../../src/modules/ai/prompts';
+import { PRODUCT_IMAGES_NOTE, STYLE_REFERENCES_NOTE, STYLE_REFERENCE_LABEL, backShotPlannerNote } from '../../src/modules/ai/prompts';
 import { FAKE_JPEG, FAKE_MP4 } from '../../src/modules/ai/fake-media';
 import { BatchItemModel } from '../../src/modules/batches/models';
 import { createBatch, defined, login, uploadReadyReferences, type ApiClient, type UploadSpec } from './support/client';
@@ -118,6 +118,7 @@ describe('what the provider receives for a product with own and common reference
       'text:STYLE REFERENCE VIDEO 1', `file:video/mp4:${ref('v1').url}`,
       'text:STYLE REFERENCE VIDEO 2', `file:video/mp4:${ref('v2').url}`,
       'text:Plan exactly 5 image shots and 3 video shots.',
+      brief(backShotPlannerNote(5) as string),
     ]);
     const header = planned.parts[0];
     const facts = JSON.parse((header?.kind === 'text' ? header.text : '').split('\n').slice(1).join('\n')) as Record<string, unknown>;

@@ -1,3 +1,4 @@
+import { backImageShotIndex } from '@rs/shared';
 import { buildImageParts, imageInputBudget, renderImagePrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
 import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
@@ -43,7 +44,9 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   const styleSources = allStyles.slice(0, budget.styles);
 
   const template = await rt.resolvePrompt(ctx.shopId, 'image.user', promptRefOf(ctx.config, 'image'));
-  const prompt = renderImagePrompt(template.text, plan, shot, config, { safe, scene: styleSources.length > 0 });
+  // The last image shot of every product is its back view, whatever the plan or the prompt version says.
+  const back = outputIndex === backImageShotIndex(plan.imageShots.length);
+  const prompt = renderImagePrompt(template.text, plan, shot, config, { safe, scene: styleSources.length > 0, back });
   const audit = promptAudit(template, prompt);
 
   try {

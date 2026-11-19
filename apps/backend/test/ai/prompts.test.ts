@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createCreativePlanSchema, defaultGenerationConfig, type CreativePlan, type ProductSnapshot } from '@rs/shared';
+import { backImageShotIndex, createCreativePlanSchema, defaultGenerationConfig, type CreativePlan, type ProductSnapshot } from '@rs/shared';
 import { DEFAULT_PROMPTS_DIR, readPromptFile } from '../../src/core/config';
 import {
+  BACK_VIEW_NOTE,
   FOCUS_NOTE_IMAGE,
   FOCUS_NOTE_VIDEO,
   PRODUCT_IMAGES_NOTE,
@@ -12,6 +13,7 @@ import {
   SAFE_PEOPLE,
   SAFE_VIDEO_NOTE,
   STYLE_REFERENCES_NOTE,
+  backShotPlannerNote,
   buildFallbackPlan,
   buildImageParts,
   buildPlannerParts,
@@ -123,6 +125,7 @@ describe('planner prompt', () => {
       'STYLE REFERENCE VIDEO 1',
       'STYLE REFERENCE VIDEO 2',
       'Plan exactly 2 image shots and 1 video shots.',
+      backShotPlannerNote(2) as string,
     ]);
 
     expect(parts.filter((part) => part.kind === 'inlineData' && part.mimeType === 'image/jpeg')).toHaveLength(10);
@@ -370,7 +373,7 @@ describe('buildFallbackPlan (SPEC 12.5)', () => {
   });
 
   it('follows the SPEC wording for the hero, close detail and video shots', () => {
-    const result = buildFallbackPlan(snapshot, { imageCount: 2, videoCount: 1 }, config);
+    const result = buildFallbackPlan(snapshot, { imageCount: 3, videoCount: 1 }, config);
     expect(result.product.mustPreserve).toEqual([
       'exact shape, colors, materials, printed text and logos as in the product images',
       'every garment and accessory worn in the product images, exactly as shown, with nothing swapped, added or restyled',
@@ -382,6 +385,23 @@ describe('buildFallbackPlan (SPEC 12.5)', () => {
     expect(result.videoShots[0]?.prompt).toContain('slow push-in toward the product');
     expect(result.videoShots[0]?.cameraMove).toBe('slow push-in toward the product');
     for (const shot of [...result.imageShots, ...result.videoShots]) expect(shot.people).toBe('none');
+  });
+
+  it('makes the last image shot the back view whenever there are two or more images', () => {
+    for (const imageCount of [2, 3, 5, 6]) {
+      const shots = buildFallbackPlan(snapshot, { imageCount, videoCount: 0 }, config).imageShots;
+      const last = shots[imageCount - 1];
+      expect(last?.title, `${imageCount} images`).toBe('Back view');
+      expect(last?.camera).toContain('back view');
+      expect(last?.prompt).toContain('seen from behind with its back facing the camera');
+      expect(shots[0]?.title).toBe('Hero shot');
+      expect(shots.slice(0, -1).some((shot) => shot.title === 'Back view')).toBe(false);
+    }
+  });
+
+  it('keeps a single fallback image as the hero', () => {
+    const shots = buildFallbackPlan(snapshot, { imageCount: 1, videoCount: 0 }, config).imageShots;
+    expect(shots.map((shot) => shot.title)).toEqual(['Hero shot']);
   });
 
   it('keeps shots distinct and ids unique', () => {
@@ -431,5 +451,48 @@ describe('deBlur', () => {
   it('leaves ordinary text and a deep aperture alone', () => {
     const text = 'A full-length photograph at f/8 in deep focus, the whole street sharp, 35mm lens.';
     expect(deBlur(text)).toBe(text);
+  });
+});
+
+describe('back view per product', () => {
+  it('puts the back view on the last image shot once there are two images', () => {
+    expect([0, 1, 2, 5, 6].map(backImageShotIndex)).toEqual([null, null, 1, 4, 5]);
+  });
+
+  it('tells the planner which image shot is the back view, and says nothing for a single image', () => {
+    expect(backShotPlannerNote(5)).toContain('Image shot 5 of 5');
+    expect(backShotPlannerNote(5)).toContain('back view');
+    expect(backShotPlannerNote(1)).toBeNull();
+    expect(backShotPlannerNote(0)).toBeNull();
+    const parts = buildPlannerParts({ snapshot, productImages: [], productVideos: [], referenceImages: [], referenceVideos: [], counts: { imageCount: 1, videoCount: 1 } }, config);
+    expect(parts.filter((part) => part.kind === 'text' && part.text.includes('back view'))).toHaveLength(0);
+  });
+
+  it('renders the back-view note before the focus note, only for the back shot', () => {
+    const shot = plan.imageShots[0];
+    if (shot === undefined) throw new Error('fixture plan has no image shot');
+    const normal = renderImagePrompt(imageTemplate, plan, shot, config);
+    const back = renderImagePrompt(imageTemplate, plan, shot, config, { back: true });
+    expect(normal).not.toContain(BACK_VIEW_NOTE);
+    expect(back).toContain(BACK_VIEW_NOTE);
+    expect(back.indexOf(BACK_VIEW_NOTE)).toBeLessThan(back.indexOf(FOCUS_NOTE_IMAGE));
+    expect(back.trimEnd().endsWith(FOCUS_NOTE_IMAGE)).toBe(true);
+  });
+
+  it('keeps the back-view note in the safer no-person presentation', () => {
+    const shot = plan.imageShots[0];
+    if (shot === undefined) throw new Error('fixture plan has no image shot');
+    const safe = renderImagePrompt(imageTemplate, plan, shot, config, { back: true, safe: true });
+    expect(safe).toContain(BACK_VIEW_NOTE);
+    expect(safe.endsWith(SAFE_IMAGE_NOTE)).toBe(true);
+  });
+
+  it('is enforced in code, not only in the editable planner prompt', () => {
+    // The default planner prompt asks for the back view too, but a store's own version may not.
+    expect(plannerTemplate).toContain('the LAST image shot is always the back view');
+    const bare = renderPlannerSystemPrompt('{{imageCount}} {{videoCount}} {{styleGuidance}}', { imageCount: 5, videoCount: 3 }, config);
+    expect(bare).not.toContain('back view');
+    expect(backShotPlannerNote(5)).not.toBeNull();
+    expect(renderImagePrompt('{{shot.prompt}} {{plan.product.mustPreserve}}', plan, plan.imageShots[0]!, config, { back: true })).toContain(BACK_VIEW_NOTE);
   });
 });

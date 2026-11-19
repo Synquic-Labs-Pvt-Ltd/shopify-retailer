@@ -122,6 +122,8 @@ export {
   type ClassifyOptions,
 } from './errors';
 export {
+  BACK_VIEW_NOTE,
+  backShotPlannerNote,
   buildFallbackPlan,
   buildImageParts,
   buildPlannerParts,

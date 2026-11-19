@@ -437,7 +437,7 @@ All prompts live in apps/backend/config/prompts as Markdown files and hot reload
 > 2. Style references define the world, not the subject. Take setting, light, palette, mood, composition and motion from them. Never copy other products, brand names, logos, packaging, readable text or identifiable people from the references.
 > 3. If there are no style references, infer a fitting, premium, natural setting from the product category and data.
 > 4. If a reference conflicts with the product (wrong scale, unsafe use, unrelated category), adapt it sensibly and explain it in warnings.
-> 5. Shots must be clearly distinct from one another: vary camera distance (wide context, medium, close detail), angle and moment while staying in the same visual world. The first image shot is the hero shot: the product prominent, well lit, instantly recognizable.
+> 5. Shots must be clearly distinct from one another: vary camera distance (wide context, medium, close detail), angle and moment while staying in the same visual world. The first image shot is the hero shot: the product prominent, well lit, instantly recognizable. When there are two or more image shots, the last image shot is always a back view of the product (section 12.8).
 > 6. Scale and physics must be believable: real size relative to hands, bodies and furniture, correct contact shadows and reflections, plausible use.
 > 7. People are optional. Use them only when they help show use, fit or scale. Adults only, natural and diverse, no celebrities or lookalikes, no identifiable real people, tasteful and fully appropriate clothing. For wearables, the product must be worn correctly and stay fully visible.
 > 8. Never include in any shot: added text, captions, watermarks, logos other than the product's own, user interface elements, borders, collages or split screens.
@@ -493,7 +493,8 @@ The negativePrompt comes from config video.negativePrompt. Default: "text, capti
 ### 12.5 Fallback plan (no model call)
 - mustPreserve: "exact shape, colors, materials, printed text and logos as in the product images".
 - Image shot 1: "{title}, a {productType} by {vendor}, displayed as the hero in a bright, minimal, premium lifestyle setting that suits the product, soft natural window light, shallow depth of field, eye-level 50mm framing, clean uncluttered background, warm neutral palette."
-- Image shot 2: the same, with a close detail framing at 85 mm.
+- Image shot 2: the same, with a close detail framing at 85 mm. With exactly two images, shot 2 is the back view instead (section 12.8).
+- Back view: whenever there are two or more image shots, the last one is "{title}, ..., seen from behind with its back facing the camera in ..., rear view framing at 50mm" with camera "back view, the back of the product facing the camera".
 - Video shot: the same setting with "slow push-in toward the product".
 - All shots use people "none".
 
@@ -510,6 +511,17 @@ The three templates above are the **global defaults**. Every store can edit its 
 - **Tracking.** Every job records promptVersion (the 12-character hash of the template text), promptRevision (the store version, 0 = global default) and renderedPrompt. Every output media asset records `prompts: { planner, render }`: the planner version that planned it (null when the deterministic fallback plan was used) and the image or video prompt version that rendered it. Both are returned on the media object.
 - **Collections:** prompt_versions {shopId, name, version, text, chars, hash, note, createdByUserId, createdAt} unique on (shopId, name, version); prompt_states {shopId, name, activeVersion, latestVersion, updatedAt} unique on (shopId, name).
 - **What stays outside the editable text:** the safer-presentation notes (SAFE_IMAGE_NOTE, SAFE_VIDEO_NOTE), the STYLE DIRECTION paragraphs, the product and reference labels and the fallback plan are code, not prompts, and are applied around any version.
+
+### 12.8 Back view per product
+
+Every product gets one back-view image. Merchants asked for it because a planner instruction alone left some products without one.
+
+- **The rule.** `backImageShotIndex(imageCount)` in @rs/shared returns the last image index (`imageCount - 1`) when `imageCount >= 2` (`MIN_IMAGES_FOR_BACK_SHOT`), else null. The first image stays the front hero. With a single image the merchant asked for one picture and it stays the hero; with 0 images there is nothing to add.
+- **Three places enforce it,** so no single one can lose it:
+  1. The planner is told in the request itself (a final text part after the counts line, `backShotPlannerNote`) which image shot is the back view, and the default planner prompt (rule 8a) says the same. A store's own planner prompt version does not need to contain the rule.
+  2. The image handler adds `BACK_VIEW_NOTE` to the rendered prompt of that shot (like the focus and scene notes it is code, not editable text). It says the back faces the camera, overrides front-facing wording from the plan, and tells the model to take back details from the product images that show the back or keep a plain back with no invented logos, prints or text. It is kept in the safer no-person retry (mannequin, hanger or flat lay turned to show its back).
+  3. The deterministic fallback plan (section 12.5) writes its last image shot as the back view.
+- **Not covered.** The image model receives at most `ai.image.maxProductImages` (3) product images, featured first and the merchant's uploads for the product next. If the only photo of the back is further down the list, the model sees no back reference and draws a plain back (see BACK_VIEW_NOTE). Video back reveals stay a planner instruction (rule 8b), not enforced.
 
 ### 12.7 Prompt design principles (research notes)
 

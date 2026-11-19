@@ -32,6 +32,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   VIDEO_MODES,
+  backImageShotIndex,
   createCreativePlanSchema,
   videoConfigSchema,
   type AiProviderName,
@@ -222,7 +223,7 @@ export async function runHarness(options: HarnessOptions): Promise<HarnessResult
   // 2. Images.
   const imageTemplate = configService.getPrompt('image.user').text;
   for (const [index, shot] of plan.imageShots.entries()) {
-    const prompt = renderImagePrompt(imageTemplate, plan, shot, config);
+    const prompt = renderImagePrompt(imageTemplate, plan, shot, config, { back: index === backImageShotIndex(plan.imageShots.length) });
     write(`prompts/image-${index + 1}.txt`, prompt);
     const result = await provider.generateImage({
       model: config.models.image,
