@@ -4,8 +4,8 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "dev": "node init && expo start --dev-client",
-    "start": "node init && expo start --dev-client",
+    "dev": "expo start --dev-client",
+    "start": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
