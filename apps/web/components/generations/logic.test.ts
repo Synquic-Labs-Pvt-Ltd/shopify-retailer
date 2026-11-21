@@ -9,6 +9,10 @@ import {
   canCancelBatch,
   canRetryFailed,
   archiveGroupOf,
+  downloadAllLabel,
+  downloadItemOf,
+  downloadOneLabel,
+  downloadProductLabel,
   archiveProgressLabel,
   archiveToast,
   batchArchiveFiles,
@@ -321,7 +325,7 @@ describe('zip contents', () => {
 
   it('names the outputs of a product like the single downloads, images first', () => {
     const product = item('Mug', [video, image]);
-    expect(archiveGroupOf(product)).toEqual({
+    expect(archiveGroupOf(product, 'original')).toEqual({
       title: 'Mug',
       files: [
         { url: image.url, filename: 'Mug-Detail-1.jpg' },
@@ -333,7 +337,7 @@ describe('zip contents', () => {
   it('puts every product of a batch in a folder named after it', () => {
     const first = item('Linen shirt', [media(1), media(2, { status: 'processing' })]);
     const second = { ...item('Tote bag', [media(3)]), id: 'e'.repeat(24) };
-    expect(batchArchiveFiles({ items: [first, second] })).toEqual([
+    expect(batchArchiveFiles({ items: [first, second] }, 'original')).toEqual([
       { url: media(1).url, path: 'Linen-shirt/Linen-shirt-image-1.jpg' },
       { url: media(3).url, path: 'Tote-bag/Tote-bag-image-1.jpg' },
     ]);
@@ -343,17 +347,68 @@ describe('zip contents', () => {
     const one = item('Mug', [media(1)]);
     const two = { ...item('Mug', [media(2)]), id: 'e'.repeat(24) };
     const none = { ...item('Empty', []), id: 'd'.repeat(24) };
-    expect(batchArchiveFiles({ items: [one, none, two] }).map((file) => file.path)).toEqual([
+    expect(batchArchiveFiles({ items: [one, none, two] }, 'original').map((file) => file.path)).toEqual([
       'Mug/Mug-image-1.jpg',
       'Mug-2/Mug-image-1.jpg',
     ]);
-    expect(batchArchiveFiles({ items: [] })).toEqual([]);
+    expect(batchArchiveFiles({ items: [] }, 'standard')).toEqual([]);
   });
 
   it('zips one product with its own folder and skips outputs that are not ready', () => {
     const product = item('Mug', [media(1), media(2, { status: 'processing' }), media(3, { url: null })]);
-    expect(productArchiveFiles(product)).toEqual([{ url: media(1).url, path: 'Mug/Mug-image-1.jpg' }]);
-    expect(productArchiveFiles(item('Mug', []))).toEqual([]);
+    expect(productArchiveFiles(product, 'original')).toEqual([{ url: media(1).url, path: 'Mug/Mug-image-1.jpg' }]);
+    expect(productArchiveFiles(item('Mug', []), 'original')).toEqual([]);
+  });
+});
+
+describe('standard and original quality', () => {
+  const pngOverrides = { url: 'https://cdn.shopify.com/o/shirt.png?v=1', filename: 'shirt.png', shotTitle: 'Front' };
+  const videoOverrides = { mediaType: 'video' as const, url: 'https://cdn.shopify.com/v/a.mp4', filename: 'a.mp4' };
+  const png = ready(pngOverrides);
+  const jpg = ready({ shotTitle: 'Back' });
+  const video = ready(videoOverrides);
+
+  it('saves a PNG as a standard JPEG, and keeps a JPEG and a video as stored', () => {
+    expect(downloadItemOf('Shirt', png, 1, 'standard')).toEqual({
+      url: png.url,
+      filename: 'Shirt-Front-1.png',
+      jpegFilename: 'Shirt-Front-1.jpg',
+    });
+    // Already a JPEG: converting again would only lose quality, so nothing is converted.
+    expect(downloadItemOf('Shirt', jpg, 2, 'standard')).toEqual({ url: jpg.url, filename: 'Shirt-Back-2.jpg' });
+    expect(downloadItemOf('Shirt', video, 3, 'standard')).toEqual({ url: video.url, filename: 'Shirt-video-3.mp4' });
+  });
+
+  it('never converts at original quality', () => {
+    expect(downloadItemOf('Shirt', png, 1, 'original')).toEqual({ url: png.url, filename: 'Shirt-Front-1.png' });
+    expect(downloadItemOf('Shirt', png, 1, 'original')).not.toHaveProperty('jpegFilename');
+  });
+
+  it('plans a zip of standard JPEGs with the stored name kept for a failed conversion', () => {
+    const product = item('Shirt', [media(1, pngOverrides), media(2, { shotTitle: 'Back' }), media(3, videoOverrides)]);
+    expect(productArchiveFiles(product, 'standard')).toEqual([
+      { url: png.url, path: 'Shirt/Shirt-Front-1.jpg', originalPath: 'Shirt/Shirt-Front-1.png' },
+      { url: media(2).url, path: 'Shirt/Shirt-Back-2.jpg' },
+      { url: video.url, path: 'Shirt/Shirt-video-3.mp4' },
+    ]);
+    expect(productArchiveFiles(product, 'original')).toEqual([
+      { url: png.url, path: 'Shirt/Shirt-Front-1.png' },
+      { url: media(2).url, path: 'Shirt/Shirt-Back-2.jpg' },
+      { url: video.url, path: 'Shirt/Shirt-video-3.mp4' },
+    ]);
+  });
+
+  it('names the buttons after the quality', () => {
+    expect([downloadAllLabel('standard'), downloadProductLabel('standard'), downloadOneLabel('standard')]).toEqual([
+      'Download all (.zip)',
+      'Download (.zip)',
+      'Download',
+    ]);
+    expect([downloadAllLabel('original'), downloadProductLabel('original'), downloadOneLabel('original')]).toEqual([
+      'Download all originals (.zip)',
+      'Download originals (.zip)',
+      'Download original',
+    ]);
   });
 });
 

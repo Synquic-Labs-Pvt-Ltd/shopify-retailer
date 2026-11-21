@@ -17,7 +17,8 @@ import { plural } from '@/lib/batch/format';
 import { usableOutputs, type ResultTileModel, type UsableOutput } from '@/lib/batch/outputs';
 import { archiveFileName, planArchive, type ArchiveFile, type ArchiveGroup } from '@/lib/archive';
 import { sanitizeFilename } from '@/lib/download-policy';
-import type { DownloadOutcome, ZipDownloadResult } from '@/lib/download';
+import type { DownloadItem, DownloadOutcome, ZipDownloadResult } from '@/lib/download';
+import { isJpegName, jpegFilename, type DownloadQuality } from '@/lib/download-quality';
 
 // Pure rules of the Generations pages: list filter, labels, file names, viewer navigation and toast texts.
 
@@ -189,29 +190,56 @@ export function outputFilename(productTitle: string, media: UsableOutput, index:
   return sanitizeFilename(`${product}-${shot}-${index}.${extension}`, `${media.mediaType}-${index}.${extension}`);
 }
 
+// The name an output gets as a standard JPEG, or undefined when it is saved as stored: at original quality, a video,
+// and a file that is already a JPEG (converting it again would only lose quality).
+function standardJpegName(filename: string, media: UsableOutput, quality: DownloadQuality): string | undefined {
+  if (quality !== 'standard' || media.mediaType !== 'image' || isJpegName(filename)) return undefined;
+  return jpegFilename(filename);
+}
+
+// One output for a single save, at the chosen quality.
+export function downloadItemOf(productTitle: string, media: UsableOutput, index: number, quality: DownloadQuality): DownloadItem {
+  const filename = outputFilename(productTitle, media, index);
+  const jpegName = standardJpegName(filename, media, quality);
+  return { url: media.url, filename, ...(jpegName === undefined ? {} : { jpegFilename: jpegName }) };
+}
+
 // The outputs of a product, named like the single downloads, for the folder of that product in a zip.
-export function archiveGroupOf(item: BatchItemView): ArchiveGroup {
+export function archiveGroupOf(item: BatchItemView, quality: DownloadQuality): ArchiveGroup {
   return {
     title: item.title,
-    files: usableOutputs(item).map((media, position) => ({
-      url: media.url,
-      filename: outputFilename(item.title, media, position + 1),
-    })),
+    files: usableOutputs(item).map((media, position) => downloadItemOf(item.title, media, position + 1, quality)),
   };
 }
 
 // Every ready output of the batch, in a folder per product.
-export function batchArchiveFiles(batch: Pick<BatchDetail, 'items'>): ArchiveFile[] {
-  return planArchive(batch.items.map(archiveGroupOf));
+export function batchArchiveFiles(batch: Pick<BatchDetail, 'items'>, quality: DownloadQuality): ArchiveFile[] {
+  return planArchive(batch.items.map((item) => archiveGroupOf(item, quality)));
 }
 
 // Every ready output of one product, in a folder named after it.
-export function productArchiveFiles(item: BatchItemView): ArchiveFile[] {
-  return planArchive([archiveGroupOf(item)]);
+export function productArchiveFiles(item: BatchItemView, quality: DownloadQuality): ArchiveFile[] {
+  return planArchive([archiveGroupOf(item, quality)]);
 }
 
 export const DOWNLOAD_ALL_LABEL = 'Download all (.zip)';
 export const DOWNLOAD_PRODUCT_LABEL = 'Download (.zip)';
+export const DOWNLOAD_ONE_LABEL = 'Download';
+export const DOWNLOAD_ALL_ORIGINAL_LABEL = 'Download all originals (.zip)';
+export const DOWNLOAD_PRODUCT_ORIGINAL_LABEL = 'Download originals (.zip)';
+export const DOWNLOAD_ONE_ORIGINAL_LABEL = 'Download original';
+
+export const downloadAllLabel = (quality: DownloadQuality): string =>
+  quality === 'original' ? DOWNLOAD_ALL_ORIGINAL_LABEL : DOWNLOAD_ALL_LABEL;
+export const downloadProductLabel = (quality: DownloadQuality): string =>
+  quality === 'original' ? DOWNLOAD_PRODUCT_ORIGINAL_LABEL : DOWNLOAD_PRODUCT_LABEL;
+export const downloadOneLabel = (quality: DownloadQuality): string =>
+  quality === 'original' ? DOWNLOAD_ONE_ORIGINAL_LABEL : DOWNLOAD_ONE_LABEL;
+
+// The switch above "Download all": off saves a smaller web-optimized JPEG, on saves the stored file untouched.
+export const DOWNLOAD_QUALITY_LABEL = 'Original quality';
+export const DOWNLOAD_QUALITY_DETAILS =
+  'On: the exact file the model produced, at full resolution. Off: a smaller web-optimized JPEG. Videos are always saved as generated.';
 
 // The file being fetched is the one after those done: "Preparing 4 of 9 files...".
 export const archiveProgressLabel = (done: number, total: number): string =>

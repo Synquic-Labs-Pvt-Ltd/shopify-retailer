@@ -1,6 +1,7 @@
 import { getSessionToken } from '@/lib/shopify';
 import { archiveFileName, type ArchiveFile } from './archive';
 import { sanitizeFilename } from './download-policy';
+import { convertToStandardJpeg, type ImageConverter } from './download-quality';
 import { ZIP_MAX_FILES, ZipError, ZipWriter } from './zip';
 
 export { isAllowedDownloadHost, sanitizeFilename } from './download-policy';
@@ -8,6 +9,8 @@ export { isAllowedDownloadHost, sanitizeFilename } from './download-policy';
 export interface DownloadItem {
   url: string;
   filename: string;
+  // Set when the file is saved as a standard JPEG: the name it gets then. `filename` is the stored file's own name.
+  jpegFilename?: string;
 }
 
 // 'saved': the browser got the file. 'opened': a soft failure, the file could not be fetched, so its URL was
@@ -90,19 +93,40 @@ function openInNewTab(url: string): boolean {
 export interface DownloadFileOptions {
   // Open the URL in a new tab when it cannot be fetched. On by default; off for bulk downloads.
   openOnFailure?: boolean;
+  // Save the image as a standard JPEG under this name. When the browser cannot convert it, the file is saved as it is,
+  // under `filename`.
+  jpegFilename?: string;
+  convert?: ImageConverter;
+}
+
+// The blob and name to save: the standard JPEG when one was asked for and the conversion works, else the stored file.
+async function chooseSaved(
+  blob: Blob,
+  name: string,
+  jpegName: string | undefined,
+  convert: ImageConverter,
+): Promise<{ blob: Blob; name: string }> {
+  if (jpegName === undefined) return { blob, name };
+  try {
+    return { blob: await convert(blob), name: jpegName };
+  } catch {
+    return { blob, name };
+  }
 }
 
 // Never throws. Tries a direct fetch, then the proxy, then (optionally) a new tab.
 export async function downloadFile(
   url: string,
   filename: string,
-  { openOnFailure = true }: DownloadFileOptions = {},
+  { openOnFailure = true, jpegFilename, convert = convertToStandardJpeg }: DownloadFileOptions = {},
 ): Promise<DownloadOutcome> {
   const name = sanitizeFilename(filename);
+  const jpegName = jpegFilename === undefined ? undefined : sanitizeFilename(jpegFilename);
   const strategies = [() => fetchDirect(url), () => fetchViaProxy(url, name)];
   for (const load of strategies) {
     try {
-      saveBlob(await load(), name);
+      const saved = await chooseSaved(await load(), name, jpegName, convert);
+      saveBlob(saved.blob, saved.name);
       return 'saved';
     } catch {
       // Try the next strategy.
@@ -136,6 +160,8 @@ export interface ZipDownloadResult {
 
 export interface ZipDownloadOptions {
   signal?: AbortSignal;
+  // Makes the standard JPEG of a file that has an originalPath. Defaults to the browser's own.
+  convert?: ImageConverter;
   // onProgress(0, total) runs first, then onProgress(n, total) after each file (fetched or skipped).
   onProgress?: (done: number, total: number) => void;
 }
@@ -158,13 +184,24 @@ function saveZip(blob: Blob, filename: string): 'saved' | 'opened' | 'failed' {
   }
 }
 
+// A file marked for conversion goes into the zip as a standard JPEG, or as the stored file itself when the browser cannot
+// convert it. Every other file is left as it is.
+async function chooseEntry(file: ArchiveFile, blob: Blob, convert: ImageConverter): Promise<{ path: string; blob: Blob }> {
+  if (file.originalPath === undefined) return { path: file.path, blob };
+  try {
+    return { path: file.path, blob: await convert(blob) };
+  } catch {
+    return { path: file.originalPath, blob };
+  }
+}
+
 // Fetches the files one at a time (direct, then through the proxy), stores them uncompressed in one zip kept as
 // Blob parts, and saves it under `archiveName`. A file that cannot be fetched is skipped and listed in the result;
 // only when no file could be fetched is nothing saved. Never throws.
 export async function downloadZip(
   files: readonly ArchiveFile[],
   archiveName: string,
-  { signal, onProgress }: ZipDownloadOptions = {},
+  { signal, onProgress, convert = convertToStandardJpeg }: ZipDownloadOptions = {},
 ): Promise<ZipDownloadResult> {
   const total = files.length;
   const result = (outcome: ZipOutcome, added: number, skipped: string[]): ZipDownloadResult => ({
@@ -183,7 +220,9 @@ export async function downloadZip(
   for (const [index, file] of files.entries()) {
     if (aborted()) return result('cancelled', zip.fileCount, skipped);
     try {
-      await zip.add(file.path, await fetchBlob(file.url, archiveFileName(file.path), signal));
+      const fetched = await fetchBlob(file.url, archiveFileName(file.originalPath ?? file.path), signal);
+      const entry = await chooseEntry(file, fetched, convert);
+      await zip.add(entry.path, entry.blob);
     } catch (error) {
       if (aborted()) return result('cancelled', zip.fileCount, skipped);
       if (error instanceof ZipError && (error.reason === 'too_large' || error.reason === 'too_many_files')) {

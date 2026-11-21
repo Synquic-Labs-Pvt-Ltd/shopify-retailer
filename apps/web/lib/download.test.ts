@@ -147,6 +147,41 @@ class HugeBlob extends Blob {
   }
 }
 
+describe('downloadFile as a standard JPEG', () => {
+  const jpeg = new Blob(['jpeg'], { type: 'image/jpeg' });
+
+  it('saves the converted JPEG under the JPEG name', async () => {
+    const convert = vi.fn(async () => jpeg);
+    expect(await downloadFile(URL_A, 'shirt-1.png', { jpegFilename: 'shirt-1.jpg', convert })).toBe('saved');
+    expect(convert).toHaveBeenCalledTimes(1);
+    expect(anchors[0]?.download).toBe('shirt-1.jpg');
+  });
+
+  it('saves the stored file under its own name when the browser cannot convert it', async () => {
+    const convert = vi.fn(async () => {
+      throw new Error('no canvas');
+    });
+    expect(await downloadFile(URL_A, 'shirt-1.png', { jpegFilename: 'shirt-1.jpg', convert })).toBe('saved');
+    expect(anchors[0]?.download).toBe('shirt-1.png');
+  });
+
+  it('does not convert when no JPEG name is given (original quality, a video or a JPEG)', async () => {
+    const convert = vi.fn(async () => jpeg);
+    expect(await downloadFile(URL_A, 'shirt-1.png', { convert })).toBe('saved');
+    expect(convert).not.toHaveBeenCalled();
+    expect(anchors[0]?.download).toBe('shirt-1.png');
+  });
+
+  it('converts the file the proxy delivered when the CDN blocked the direct fetch', async () => {
+    fetchMock.mockImplementationOnce(() => Promise.reject(CORS_ERROR));
+    const convert = vi.fn(async () => jpeg);
+    expect(await downloadFile(URL_A, 'shirt-1.png', { jpegFilename: 'shirt-1.jpg', convert })).toBe('saved');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(convert).toHaveBeenCalledTimes(1);
+    expect(anchors[0]?.download).toBe('shirt-1.jpg');
+  });
+});
+
 describe('downloadZip', () => {
   const FILES: ArchiveFile[] = [
     { url: URL_A, path: 'Lamp/lamp-1.jpg' },
@@ -328,5 +363,58 @@ describe('downloadZip', () => {
       body: { append: vi.fn() },
     });
     expect((await downloadZip(FILES, 'x.zip')).outcome).toBe('failed');
+  });
+});
+
+describe('downloadZip with standard JPEGs', () => {
+  let saved: Blob[];
+  const names = async (): Promise<string[]> => (await parseZip(saved[0] as Blob)).entries.map((entry) => entry.name);
+  const texts = async (): Promise<string[]> =>
+    (await parseZip(saved[0] as Blob)).entries.map((entry) => new TextDecoder().decode(entry.data));
+
+  const FILES: ArchiveFile[] = [
+    { url: URL_A, path: 'Shirt/shirt-1.jpg', originalPath: 'Shirt/shirt-1.png' },
+    { url: URL_B, path: 'Shirt/shirt-2.jpg' },
+    { url: URL_C, path: 'Shirt/shirt-3.mp4' },
+  ];
+
+  beforeEach(() => {
+    saved = [];
+    const create = URL.createObjectURL.bind(URL);
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((object) => {
+      saved.push(object as Blob);
+      return create(object);
+    });
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(new Response({ [URL_A]: 'PNG-A', [URL_B]: 'JPG-B', [URL_C]: 'MP4-C' }[String(input)] ?? '?', { status: 200 })),
+    );
+  });
+
+  it('puts the converted JPEG in the zip and leaves the files without an original path alone', async () => {
+    const convert = vi.fn(async () => new Blob(['CONVERTED'], { type: 'image/jpeg' }));
+    const result = await downloadZip(FILES, 'a.zip', { convert });
+    expect(result).toEqual({ outcome: 'saved', total: 3, added: 3, skipped: [] });
+    expect(convert).toHaveBeenCalledTimes(1);
+    expect(await names()).toEqual(['Shirt/shirt-1.jpg', 'Shirt/shirt-2.jpg', 'Shirt/shirt-3.mp4']);
+    expect(await texts()).toEqual(['CONVERTED', 'JPG-B', 'MP4-C']);
+  });
+
+  it('keeps the stored file, under its own name, when the conversion fails', async () => {
+    const convert = vi.fn(async () => {
+      throw new Error('no canvas');
+    });
+    const result = await downloadZip(FILES, 'a.zip', { convert });
+    expect(result).toEqual({ outcome: 'saved', total: 3, added: 3, skipped: [] });
+    // No PNG named .jpg: the entry gets the stored name and the stored bytes.
+    expect(await names()).toEqual(['Shirt/shirt-1.png', 'Shirt/shirt-2.jpg', 'Shirt/shirt-3.mp4']);
+    expect(await texts()).toEqual(['PNG-A', 'JPG-B', 'MP4-C']);
+  });
+
+  it('does not convert anything for a zip of originals', async () => {
+    const convert = vi.fn(async () => new Blob(['CONVERTED']));
+    const originals: ArchiveFile[] = [{ url: URL_A, path: 'Shirt/shirt-1.png' }];
+    await downloadZip(originals, 'a.zip', { convert });
+    expect(convert).not.toHaveBeenCalled();
+    expect(await texts()).toEqual(['PNG-A']);
   });
 });

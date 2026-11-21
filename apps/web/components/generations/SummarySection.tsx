@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import type { BatchDetail } from '@rs/shared';
 import { batchProgress, batchTone } from '@/lib/batch/status';
+import type { DownloadQuality } from '@/lib/download-quality';
+import { DownloadQualityToggle } from './DownloadQualityToggle';
 import {
-  DOWNLOAD_ALL_LABEL,
   archiveProgressLabel,
+  downloadAllLabel,
   outputsReady,
   outputsTotal,
   percentText,
@@ -28,11 +30,14 @@ interface SummarySectionProps {
   saving: boolean;
   // Set while the zip of the whole batch is being built.
   archive: ArchiveProgress | null;
+  // Standard (web JPEG) or original files, for every download of the page.
+  quality: DownloadQuality;
+  onQualityChange: (quality: DownloadQuality) => void;
   onDownloadAll: () => void;
 }
 
-// The aside of the detail page: status, counts, progress and "Download all (.zip)".
-export function SummarySection({ batch, downloadCount, saving, archive, onDownloadAll }: SummarySectionProps) {
+// The aside of the detail page: status, counts, progress, the original-quality switch and "Download all (.zip)".
+export function SummarySection({ batch, downloadCount, saving, archive, quality, onQualityChange, onDownloadAll }: SummarySectionProps) {
   const progress = batchProgress(batch.counts);
   return (
     <s-section slot="aside" heading="Summary">
@@ -52,6 +57,7 @@ export function SummarySection({ batch, downloadCount, saving, archive, onDownlo
           accessibilityLabel={`${percentText(progress)} of the jobs finished`}
         />
         <s-divider />
+        <DownloadQualityToggle quality={quality} onChange={onQualityChange} />
         <s-button
           inlineSize="fill"
           icon="download"
@@ -59,7 +65,7 @@ export function SummarySection({ batch, downloadCount, saving, archive, onDownlo
           disabled={downloadCount === 0 || saving}
           onClick={onDownloadAll}
         >
-          {archive === null ? DOWNLOAD_ALL_LABEL : archiveProgressLabel(archive.done, archive.total)}
+          {archive === null ? downloadAllLabel(quality) : archiveProgressLabel(archive.done, archive.total)}
         </s-button>
         {archive === null ? null : (
           <s-progress

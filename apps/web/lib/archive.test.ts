@@ -156,3 +156,37 @@ describe('archive names', () => {
     expect(archiveFileName('plain.jpg')).toBe('plain.jpg');
   });
 });
+
+describe('planArchive with standard JPEGs', () => {
+  it('names a converted file .jpg and keeps the stored name for when the conversion fails', () => {
+    const plan = planArchive([
+      {
+        title: 'Linen shirt',
+        files: [
+          { url: 'u1', filename: 'shirt-1.png', jpegFilename: 'shirt-1.jpg' },
+          { url: 'u2', filename: 'shirt-2.jpg' },
+          { url: 'u3', filename: 'shirt-3.mp4' },
+        ],
+      },
+    ]);
+    expect(plan).toEqual([
+      { url: 'u1', path: 'Linen-shirt/shirt-1.jpg', originalPath: 'Linen-shirt/shirt-1.png' },
+      { url: 'u2', path: 'Linen-shirt/shirt-2.jpg' },
+      { url: 'u3', path: 'Linen-shirt/shirt-3.mp4' },
+    ]);
+    expect(plan[1]).not.toHaveProperty('originalPath');
+  });
+
+  it('numbers a converted name that is already taken by another file', () => {
+    const plan = planArchive([
+      {
+        title: 'Mug',
+        files: [
+          { url: 'u1', filename: 'mug.png', jpegFilename: 'mug.jpg' },
+          { url: 'u2', filename: 'mug.jpg' },
+        ],
+      },
+    ]);
+    expect(plan.map((file) => file.path)).toEqual(['Mug/mug.jpg', 'Mug/mug-2.jpg']);
+  });
+});

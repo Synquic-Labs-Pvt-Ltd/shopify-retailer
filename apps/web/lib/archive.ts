@@ -4,7 +4,10 @@ import { sanitizeFilename } from './download-policy';
 
 export interface ArchiveSource {
   url: string;
+  // The stored file's own name.
   filename: string;
+  // Set when the file is saved as a standard JPEG (see download-quality.ts): the name it gets then.
+  jpegFilename?: string;
 }
 
 // The files of one product; they share a folder in the archive.
@@ -17,6 +20,9 @@ export interface ArchiveFile {
   url: string;
   // Path inside the zip: "{folder}/{file name}".
   path: string;
+  // Set when the file is converted to a standard JPEG: `path` then ends in .jpg, and this is the path the stored file
+  // gets instead when the browser cannot convert it, so the zip never holds a PNG named .jpg.
+  originalPath?: string;
 }
 
 const MAX_FOLDER_LENGTH = 60;
@@ -66,7 +72,15 @@ export function planArchive(groups: readonly ArchiveGroup[]): ArchiveFile[] {
     const folder = uniqueName(archiveFolderName(group.title, `product-${index + 1}`), folders, { extension: false });
     const names = new Set<string>();
     for (const file of group.files) {
-      files.push({ url: file.url, path: `${folder}/${uniqueName(sanitizeFilename(file.filename, 'file'), names)}` });
+      if (file.jpegFilename === undefined) {
+        files.push({ url: file.url, path: `${folder}/${uniqueName(sanitizeFilename(file.filename, 'file'), names)}` });
+        continue;
+      }
+      files.push({
+        url: file.url,
+        path: `${folder}/${uniqueName(sanitizeFilename(file.jpegFilename, 'file.jpg'), names)}`,
+        originalPath: `${folder}/${sanitizeFilename(file.filename, 'file')}`,
+      });
     }
   });
   return files;

@@ -38,6 +38,7 @@ import { MediaViewer } from './MediaViewer';
 import { NoticeBanner } from './NoticeBanner';
 import { BatchStatusBadge } from './StatusBadge';
 import { SummarySection } from './SummarySection';
+import { useDownloadQuality } from './useDownloadQuality';
 import { useDownloads } from './useDownloads';
 
 function BackLink() {
@@ -99,6 +100,7 @@ export function BatchDetailView({ id }: { id: string }) {
   const retry = useRetryFailed();
   const attach = useAttachMedia();
   const downloads = useDownloads();
+  const [quality, setQuality] = useDownloadQuality();
   const [target, setTarget] = useState<ViewerTarget | null>(null);
   // What the running add request is for: BATCH_SCOPE, or the id of one product.
   const [attaching, setAttaching] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export function BatchDetailView({ id }: { id: string }) {
   const batch = query.data;
 
   const { saveArchive } = downloads;
-  const archiveFiles = useMemo(() => (batch === undefined ? [] : batchArchiveFiles(batch)), [batch]);
+  const archiveFiles = useMemo(() => (batch === undefined ? [] : batchArchiveFiles(batch, quality)), [batch, quality]);
   const viewerItem = useMemo(
     () => (target === null ? undefined : batch?.items.find((candidate) => candidate.id === target.itemId)),
     [batch, target],
@@ -221,10 +223,11 @@ export function BatchDetailView({ id }: { id: string }) {
             item={item}
             expected={expected}
             busy={working}
+            quality={quality}
             zipProgress={zipProgressOf(downloads.archive, item.id)}
             attaching={attaching === item.id}
             onOpen={setTarget}
-            onDownload={() => void saveArchive(item.id, productArchiveFiles(item), productArchiveName(item.title))}
+            onDownload={() => void saveArchive(item.id, productArchiveFiles(item, quality), productArchiveName(item.title))}
             onAttach={() => attachMedia(item.id, [item.id])}
           />
         ))}
@@ -234,6 +237,8 @@ export function BatchDetailView({ id }: { id: string }) {
           downloadCount={archiveFiles.length}
           saving={working}
           archive={downloads.archive?.scope === BATCH_SCOPE ? downloads.archive : null}
+          quality={quality}
+          onQualityChange={setQuality}
           onDownloadAll={downloadAll}
         />
       </s-page>
@@ -247,6 +252,7 @@ export function BatchDetailView({ id }: { id: string }) {
         item={viewerItem}
         mediaId={target?.mediaId ?? null}
         saving={downloads.saving}
+        quality={quality}
         onSelect={selectOutput}
         onClose={closeViewer}
         onDownload={(file) => void downloads.saveOne(file)}

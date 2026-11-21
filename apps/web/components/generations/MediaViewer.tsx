@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { BatchItemView } from '@rs/shared';
 import { usableOutputs } from '@/lib/batch/outputs';
 import type { DownloadItem } from '@/lib/download';
-import { arrowKeyDelta, neighbourId, outputFilename, outputPromptsText, viewerCounter, viewerIndex } from './logic';
+import type { DownloadQuality } from '@/lib/download-quality';
+import { arrowKeyDelta, downloadItemOf, downloadOneLabel, neighbourId, outputPromptsText, viewerCounter, viewerIndex } from './logic';
 import { useModalOverlay, type ModalElement } from './overlay';
 import styles from './generations.module.css';
 
@@ -14,6 +15,8 @@ interface MediaViewerProps {
   mediaId: string | null;
   // A save of any kind is running.
   saving: boolean;
+  // Standard (web JPEG) or original file for Download.
+  quality: DownloadQuality;
   onSelect: (mediaId: string) => void;
   onClose: () => void;
   onDownload: (file: DownloadItem) => void;
@@ -25,7 +28,7 @@ function isMediaElement(target: EventTarget | null): boolean {
 
 // SPEC 16.2 MediaViewer: the outputs of one product in a large modal. Previous and next buttons or the left and
 // right arrow keys step through them; Download saves the current one.
-export function MediaViewer({ item, mediaId, saving, onSelect, onClose, onDownload }: MediaViewerProps) {
+export function MediaViewer({ item, mediaId, saving, quality, onSelect, onClose, onDownload }: MediaViewerProps) {
   const modalRef = useRef<ModalElement | null>(null);
   const outputs = useMemo(() => (item === undefined ? [] : usableOutputs(item)), [item]);
   const index = mediaId === null ? -1 : viewerIndex(outputs, mediaId);
@@ -104,11 +107,11 @@ export function MediaViewer({ item, mediaId, saving, onSelect, onClose, onDownlo
         disabled={current === undefined || saving}
         onClick={() => {
           if (item !== undefined && current !== undefined) {
-            onDownload({ url: current.url, filename: outputFilename(item.title, current, index + 1) });
+            onDownload(downloadItemOf(item.title, current, index + 1, quality));
           }
         }}
       >
-        Download
+        {downloadOneLabel(quality)}
       </s-button>
       <s-button slot="secondary-actions" commandFor={VIEWER_MODAL_ID} command="--hide">
         Close

@@ -24,7 +24,9 @@ export function useDownloads() {
     busy.current = true;
     setSavingOne(true);
     try {
-      const { message, isError } = singleDownloadToast(await downloadFile(item.url, item.filename));
+      const { message, isError } = singleDownloadToast(
+        await downloadFile(item.url, item.filename, item.jpegFilename === undefined ? {} : { jpegFilename: item.jpegFilename }),
+      );
       showToast(message, isError);
     } finally {
       busy.current = false;

@@ -1,5 +1,6 @@
 import type { BatchItemView } from '@rs/shared';
 import { usableOutputs } from '@/lib/batch/outputs';
+import type { DownloadQuality } from '@/lib/download-quality';
 import { attachState } from './attach';
 import { ItemActions } from './ItemActions';
 import { itemPromptsText, itemSummaryText, STYLE_MODE_RESULT_LABELS, type ViewerTarget } from './logic';
@@ -12,6 +13,8 @@ interface ItemSectionProps {
   expected: number;
   // Any save or add request of the page is running.
   busy: boolean;
+  // Standard or original files for the zip.
+  quality: DownloadQuality;
   // Set while this product's zip is being built.
   zipProgress: string | null;
   // This product's request to add its outputs is running.
@@ -27,6 +30,7 @@ export function ItemSection({
   item,
   expected,
   busy,
+  quality,
   zipProgress,
   attaching,
   onOpen,
@@ -53,6 +57,7 @@ export function ItemSection({
           attachState={attachState(item)}
           attaching={attaching}
           busy={busy}
+          quality={quality}
           zipProgress={zipProgress}
           onDownload={onDownload}
           onAttach={onAttach}
