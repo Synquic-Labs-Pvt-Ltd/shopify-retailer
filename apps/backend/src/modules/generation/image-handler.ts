@@ -1,5 +1,5 @@
 import { backImageShotIndex } from '@rs/shared';
-import { buildImageParts, imageInputBudget, isMannequinOnlyProduct, renderImagePrompt } from '../ai';
+import { buildImageParts, imageInputBudget, imageSizeOf, isMannequinOnlyProduct, renderImagePrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
 import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
@@ -68,6 +68,21 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       outputMimeType: ctx.config.image.outputMimeType,
     });
     if (!generated.ok) return outcomeFromGenerationError(generated.error, job, audit);
+    // What the model really returned: the quality a merchant gets is the size and format of this file.
+    const size = imageSizeOf(generated.value.bytes);
+    rt.logger.info(
+      {
+        jobId: job.id,
+        model: ctx.config.models.image,
+        mimeType: generated.value.mimeType,
+        bytes: generated.value.bytes.byteLength,
+        width: size?.width ?? null,
+        height: size?.height ?? null,
+        requestedSize: ctx.config.image.imageSize,
+        requestedMimeType: ctx.config.image.outputMimeType,
+      },
+      'image generated',
+    );
 
     const stored = await persistOutput(rt, {
       job,

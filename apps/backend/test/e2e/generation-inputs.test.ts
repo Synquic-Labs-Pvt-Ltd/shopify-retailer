@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { batchSummarySchema, type MediaObject } from '@rs/shared';
+import { batchSummarySchema, defaultGenerationConfig, type MediaObject } from '@rs/shared';
 import { classifyAiError, type AiPart } from '../../src/modules/ai';
 import { PRODUCT_IMAGES_NOTE, STYLE_REFERENCES_NOTE, STYLE_REFERENCE_LABEL, backShotPlannerNote } from '../../src/modules/ai/prompts';
 import { FAKE_JPEG, FAKE_MP4 } from '../../src/modules/ai/fake-media';
@@ -135,7 +135,13 @@ describe('what the provider receives for a product with own and common reference
     // the rendered prompt.
     expect(image).toHaveBeenCalledTimes(5);
     for (const [call] of image.mock.calls) {
-      expect(call).toMatchObject({ model: 'gemini-2.5-flash-image', location: 'us-central1', aspectRatio: '3:4', imageSize: '2K', outputMimeType: 'image/jpeg' });
+      expect(call).toMatchObject({
+        model: defaultGenerationConfig.models.image,
+        location: defaultGenerationConfig.locations.image,
+        aspectRatio: '3:4',
+        imageSize: defaultGenerationConfig.image.imageSize,
+        outputMimeType: defaultGenerationConfig.image.outputMimeType,
+      });
       const view = 'the exact product, the same item from another view';
       expect(call.parts.slice(0, -1).map(describePart)).toEqual([
         brief(`STYLE REFERENCE 1 of 1 (${STYLE_REFERENCE_LABEL})`), 'inline:image/jpeg:c1',

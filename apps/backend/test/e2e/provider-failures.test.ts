@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { batchSummarySchema, healthResponseSchema, type MediaObject } from '@rs/shared';
+import { batchSummarySchema, defaultGenerationConfig, healthResponseSchema, type MediaObject } from '@rs/shared';
 import { FAKE_JPEG } from '../../src/modules/ai/fake-media';
 import { classifyAiError, makeAiError, SAFE_IMAGE_NOTE } from '../../src/modules/ai';
 import { BatchItemModel, BatchModel } from '../../src/modules/batches/models';
@@ -13,7 +13,7 @@ import { MONGO_START_TIMEOUT_MS, startE2e, type E2e } from './support/harness';
 
 const SHOP = 'flaky-store.myshopify.com';
 const PLANNER_LANE = 'fake:gemini-2.5-flash';
-const IMAGE_LANE = 'fake:gemini-2.5-flash-image';
+const IMAGE_LANE = `fake:${defaultGenerationConfig.models.image}`;
 
 let e2e: E2e;
 let client: ApiClient;

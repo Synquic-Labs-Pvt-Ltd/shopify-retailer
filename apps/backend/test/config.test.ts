@@ -62,7 +62,7 @@ describe('shipped defaults', () => {
 describe('config loader', () => {
   it('loads a valid config and prompts', () => {
     const service = open(createFixture());
-    expect(service.get().models.image).toBe('gemini-2.5-flash-image');
+    expect(service.get().models.image).toBe('gemini-3-pro-image');
     const prompt = service.getPrompt('image.user');
     expect(prompt.text).toBe('Template image.user {{value}}');
     expect(prompt.version).toBe(hashPrompt('Template image.user {{value}}'));
@@ -109,7 +109,7 @@ describe('config loader', () => {
     const rejected = service.reload();
     expect(rejected.ok).toBe(false);
     expect(rejected.errors.join('\n')).toContain('vertex:gemini-9-image');
-    expect(service.get().models.image).toBe('gemini-2.5-flash-image');
+    expect(service.get().models.image).toBe('gemini-3-pro-image');
     expect(() => createConfigService({ logger, ...fixture, watch: false })).toThrow(ConfigError);
 
     // Adding the lane, or using a provider wildcard lane, makes the same models valid.

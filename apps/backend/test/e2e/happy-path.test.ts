@@ -6,6 +6,7 @@ import {
   authSessionResponseSchema,
   batchListResponseSchema,
   batchSummarySchema,
+  defaultGenerationConfig,
   healthResponseSchema,
   mediaListResponseSchema,
   meResponseSchema,
@@ -264,7 +265,7 @@ describe('batch', () => {
     expect(jobs).toHaveLength(27);
     const byType = (type: string) => jobs.filter((job) => job.type === type);
     expect(byType('plan').map((job) => [job.status, job.lane])).toEqual(Array(3).fill(['queued', 'fake:gemini-2.5-flash']));
-    expect(byType('image').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(15).fill(['blocked', 'fake:gemini-2.5-flash-image', 1]));
+    expect(byType('image').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(15).fill(['blocked', `fake:${defaultGenerationConfig.models.image}`, 1]));
     expect(byType('video').map((job) => [job.status, job.lane, job.dependsOn.length])).toEqual(Array(9).fill(['blocked', 'fake:veo-3.1-generate-001', 1]));
 
     const list = batchListResponseSchema.parse((await client.get('/api/v1/batches')).body);

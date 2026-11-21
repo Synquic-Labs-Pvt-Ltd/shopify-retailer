@@ -12,6 +12,14 @@
  *   tsx scripts/smoke-providers.ts --video-probe    also GET the Veo model resource (free)
  *   tsx scripts/smoke-providers.ts --video-submit   also submit one Veo job (COSTS MONEY)
  *
+ * Try another image model without editing the config (one image, COSTS MONEY, a few cents):
+ *   tsx scripts/smoke-providers.ts --only image --image-model gemini-3.1-flash-image \
+ *       --image-location global --image-size 2K --image-mime image/png
+ *   The image check sends the same imageSize and output options as production and prints the format and pixel size
+ *   that came back. Pass "none" to --image-size or --image-mime to leave that option out.
+ *   Add --with-reference to send a small product-photo stand-in as well: production always sends product photos, and
+ *   a model may treat imageSize differently when an input image is present, so run it both ways.
+ *
  * Env: GOOGLE_CLOUD_PROJECT, GOOGLE_APPLICATION_CREDENTIALS (vertex),
  *      GEMINI_API_KEY (aistudio), GENERATION_CONFIG_PATH (optional).
  */
@@ -19,6 +27,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleAuth } from 'google-auth-library';
+import { JPEG_QUALITY } from '../src/modules/ai/gemini-content';
+import { imageSizeOf } from '../src/modules/ai/image-info';
 
 type Provider = 'vertex' | 'aistudio';
 type Target = 'planner' | 'image' | 'video';
@@ -27,7 +37,7 @@ interface SmokeConfig {
   provider: string;
   models: { planner: string; image: string; video: string };
   locations?: { planner?: string; image?: string; video?: string };
-  image: { aspectRatio: string };
+  image: { aspectRatio: string; imageSize?: string; outputMimeType?: string };
   video: { aspectRatio: string; durationSeconds: number; resolution: string };
 }
 
@@ -146,8 +156,27 @@ async function smokePlanner(b: Backend, cfg: SmokeConfig): Promise<Result> {
   return { target: 'planner', model, ok: Boolean(out), detail: out ? `text ok: ${out.slice(0, 80)}` : 'HTTP 200 but no text part' };
 }
 
-async function smokeImage(b: Backend, cfg: SmokeConfig): Promise<Result> {
+/** The same optional image fields the backend sends (gemini-content.ts), so the answer is what production would get. */
+function smokeImageConfig(provider: Provider, cfg: SmokeConfig): Record<string, unknown> {
+  const imageConfig: Record<string, unknown> = { aspectRatio: cfg.image.aspectRatio };
+  const size = cfg.image.imageSize;
+  const mime = cfg.image.outputMimeType;
+  if (size && size !== 'none') imageConfig.imageSize = size;
+  // AI Studio has no output options; Vertex takes them in imageOutputOptions.
+  if (provider === 'vertex' && mime && mime !== 'none') {
+    imageConfig.imageOutputOptions = mime === 'image/jpeg' ? { mimeType: mime, compressionQuality: JPEG_QUALITY } : { mimeType: mime };
+  }
+  return imageConfig;
+}
+
+// A 1x1 PNG: enough to make the request carry an input image, like the product photos of a real job.
+const REFERENCE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+async function smokeImage(b: Backend, cfg: SmokeConfig, provider: Provider): Promise<Result> {
   const model = cfg.models.image;
+  const imageConfig = smokeImageConfig(provider, cfg);
+  const withReference = Boolean(arg('with-reference'));
+  const sent = `sent ${JSON.stringify(imageConfig)}${withReference ? ' with a reference image' : ''}`;
   const { status, text } = await call(b.generateContentUrl(model, 'image'), {
     method: 'POST',
     headers: await b.headers(),
@@ -155,16 +184,16 @@ async function smokeImage(b: Backend, cfg: SmokeConfig): Promise<Result> {
       contents: [
         {
           role: 'user',
-          parts: [{ text: 'Photorealistic photo of a plain white ceramic mug on a light wooden table, soft window light.' }],
+          parts: [
+            ...(withReference ? [{ inlineData: { mimeType: 'image/png', data: REFERENCE_PNG } }] : []),
+            { text: 'Photorealistic photo of a plain white ceramic mug on a light wooden table, soft window light.' },
+          ],
         },
       ],
-      generationConfig: {
-        responseModalities: ['IMAGE', 'TEXT'],
-        imageConfig: { aspectRatio: cfg.image.aspectRatio },
-      },
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'], imageConfig },
     }),
   });
-  if (status !== 200) return { target: 'image', model, ok: false, detail: `${summariseError(status, text)}\n${truncate(text)}` };
+  if (status !== 200) return { target: 'image', model, ok: false, detail: `${sent}\n${summariseError(status, text)}\n${truncate(text)}` };
   const parts =
     (JSON.parse(text) as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string } }> } }> })
       .candidates?.[0];
@@ -172,8 +201,16 @@ async function smokeImage(b: Backend, cfg: SmokeConfig): Promise<Result> {
   if (!img?.inlineData?.data) {
     return { target: 'image', model, ok: false, detail: `HTTP 200 but no image part (finishReason=${parts?.finishReason ?? '?'})` };
   }
-  const bytes = Math.floor((img.inlineData.data.length * 3) / 4);
-  return { target: 'image', model, ok: true, detail: `image ok: ${img.inlineData.mimeType ?? '?'} ~${bytes} bytes` };
+  const data = Buffer.from(img.inlineData.data, 'base64');
+  const size = imageSizeOf(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  const pixels = size === null ? 'size unknown' : `${size.width}x${size.height} px`;
+  const requested = imageConfig.imageSize === undefined ? 'no size requested' : `requested ${String(imageConfig.imageSize)}`;
+  return {
+    target: 'image',
+    model,
+    ok: true,
+    detail: `image ok: ${img.inlineData.mimeType ?? '?'}, ${pixels}, ${(data.byteLength / 1024 / 1024).toFixed(2)} MB (${requested}; ${sent})`,
+  };
 }
 
 async function smokeVideo(b: Backend, cfg: SmokeConfig, submit: boolean): Promise<Result> {
@@ -205,6 +242,15 @@ async function smokeVideo(b: Backend, cfg: SmokeConfig, submit: boolean): Promis
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  // Try another image model, location, size or format without editing the config file.
+  const imageModel = arg('image-model');
+  if (imageModel) cfg.models.image = imageModel;
+  const imageLocation = arg('image-location');
+  if (imageLocation) cfg.locations = { ...cfg.locations, image: imageLocation };
+  const imageSize = arg('image-size');
+  if (imageSize) cfg.image.imageSize = imageSize;
+  const imageMime = arg('image-mime');
+  if (imageMime) cfg.image.outputMimeType = imageMime;
   const provider = (arg('provider') ?? cfg.provider) as string;
   if (provider !== 'vertex' && provider !== 'aistudio') {
     throw new Error(`provider "${provider}" has no real backend to smoke test (use vertex or aistudio)`);
@@ -217,7 +263,7 @@ async function main(): Promise<void> {
 
   const results: Result[] = [];
   if (only.has('planner')) results.push(await smokePlanner(backend, cfg));
-  if (only.has('image')) results.push(await smokeImage(backend, cfg));
+  if (only.has('image')) results.push(await smokeImage(backend, cfg, provider));
   if (only.has('video')) results.push(await smokeVideo(backend, cfg, Boolean(arg('video-submit'))));
 
   for (const r of results) console.log(`[${r.ok ? 'PASS' : 'FAIL'}] ${r.target} (${r.model}): ${r.detail}`);

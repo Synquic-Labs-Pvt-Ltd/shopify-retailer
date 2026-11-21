@@ -11,6 +11,19 @@ async function main(): Promise<void> {
   const env = parseEnv();
   const logger = createLogger(env.LOG_LEVEL);
   const config = createConfigService({ logger, configPath: env.GENERATION_CONFIG_PATH });
+  // Which image model is live, and whether the file in the code or an environment override chose it.
+  const live = config.get();
+  logger.info(
+    {
+      source: env.GENERATION_CONFIG_PATH === undefined ? 'config/generation.config.json (the code)' : `GENERATION_CONFIG_PATH=${env.GENERATION_CONFIG_PATH}`,
+      provider: live.provider,
+      imageModel: live.models.image,
+      imageLocation: live.locations.image,
+      imageSize: live.image.imageSize,
+      imageMimeType: live.image.outputMimeType,
+    },
+    'generation config in effect',
+  );
   const container = createContainer({ env, logger, config });
   const abort = new AbortController();
 

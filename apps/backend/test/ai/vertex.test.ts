@@ -169,7 +169,21 @@ describe('vertex image', () => {
     expect(at(calls[0]?.body, 'generationConfig', 'imageConfig', 'imageOutputOptions')).toEqual({ mimeType: 'image/png' });
   });
 
-  it('retries once without imageSize and output options when the model rejects them, then remembers', async () => {
+  const rejecting = (option: string): Response =>
+    jsonResponse(
+      400,
+      JSON.stringify({
+        error: {
+          code: 400,
+          message: `Unable to submit request because the model gemini-test does not support the ${option} parameter. Remove the ${option} parameter and try again.`,
+          status: 'INVALID_ARGUMENT',
+        },
+      }),
+    );
+  const imageConfigOf = (call: { body: unknown } | undefined): unknown => at(call?.body, 'generationConfig', 'imageConfig');
+  const JPEG_OUTPUT = { mimeType: 'image/jpeg', compressionQuality: 90 };
+
+  it('drops only imageSize when the model rejects imageSize, keeps the output options, and remembers', async () => {
     const { provider, calls, log } = setup((_call, index) =>
       index === 0 ? jsonResponse(400, fixtureText('400-image-size-unsupported.json')) : imageSuccess(),
     );
@@ -178,13 +192,57 @@ describe('vertex image', () => {
     expect(first.ok).toBe(true);
     expect(calls).toHaveLength(2);
     expect(at(calls[0]?.body, 'generationConfig', 'imageConfig', 'imageSize')).toBe('2K');
-    expect(at(calls[1]?.body, 'generationConfig', 'imageConfig')).toEqual({ aspectRatio: '3:4' });
+    expect(imageConfigOf(calls[1])).toEqual({ aspectRatio: '3:4', imageOutputOptions: JPEG_OUTPUT });
 
     const second = await provider.generateImage(imageRequest());
     expect(second.ok).toBe(true);
     expect(calls).toHaveLength(3);
-    expect(at(calls[2]?.body, 'generationConfig', 'imageConfig')).toEqual({ aspectRatio: '3:4' });
+    expect(imageConfigOf(calls[2])).toEqual({ aspectRatio: '3:4', imageOutputOptions: JPEG_OUTPUT });
     expect(log.lines.some((line) => line.msg === 'ai provider call failed' && String(line.body).includes('imageSize'))).toBe(true);
+    // The merchant-facing consequence is in the log: this model returns its default size.
+    expect(log.lines.some((line) => String(line.msg).includes('returns its default image size'))).toBe(true);
+  });
+
+  it('drops only the output options when the model rejects them, so the image size is still requested', async () => {
+    const { provider, calls } = setup((_call, index) => (index === 0 ? rejecting('imageOutputOptions') : imageSuccess()));
+
+    expect((await provider.generateImage(imageRequest())).ok).toBe(true);
+    expect(calls).toHaveLength(2);
+    expect(imageConfigOf(calls[1])).toEqual({ aspectRatio: '3:4', imageSize: '2K' });
+
+    expect((await provider.generateImage(imageRequest())).ok).toBe(true);
+    expect(calls).toHaveLength(3);
+    expect(imageConfigOf(calls[2])).toEqual({ aspectRatio: '3:4', imageSize: '2K' });
+  });
+
+  it('drops both, one at a time, for a model that accepts neither, and remembers', async () => {
+    const { provider, calls } = setup((_call, index) => {
+      if (index === 0) return rejecting('imageSize');
+      if (index === 1) return rejecting('imageOutputOptions');
+      return imageSuccess();
+    });
+
+    expect((await provider.generateImage(imageRequest())).ok).toBe(true);
+    expect(calls).toHaveLength(3);
+    expect(imageConfigOf(calls[1])).toEqual({ aspectRatio: '3:4', imageOutputOptions: JPEG_OUTPUT });
+    expect(imageConfigOf(calls[2])).toEqual({ aspectRatio: '3:4' });
+
+    expect((await provider.generateImage(imageRequest())).ok).toBe(true);
+    expect(calls).toHaveLength(4);
+    expect(imageConfigOf(calls[3])).toEqual({ aspectRatio: '3:4' });
+  });
+
+  it('drops both at once when one error names both, and gives up when a rejection names nothing left to drop', async () => {
+    const both = setup((_call, index) => (index === 0 ? rejecting('imageSize and imageOutputOptions') : imageSuccess()));
+    expect((await both.provider.generateImage(imageRequest())).ok).toBe(true);
+    expect(both.calls).toHaveLength(2);
+    expect(imageConfigOf(both.calls[1])).toEqual({ aspectRatio: '3:4' });
+
+    // Still rejected after everything it names was dropped: the error is returned, not retried forever.
+    const stuck = setup(() => rejecting('imageSize'));
+    const result = await stuck.provider.generateImage(imageRequest());
+    expect(stuck.calls).toHaveLength(2);
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid_request' } });
   });
 
   it('does not retry unrelated 400s', async () => {

@@ -12,6 +12,9 @@ import { bytes, captureLogger } from '../ai/helpers';
 
 const SHOP = 'demo.myshopify.com';
 
+// The header of an 864x1184 progressive JPEG (the size the model in use returns today), enough for its size to be read.
+const GENERATED_JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc2, 0, 17, 8, 0x04, 0xa0, 0x03, 0x60, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xd9]);
+
 function snapshotFor(imageCount: number): BatchConfigSnapshot {
   const config: GenerationConfig = defaultGenerationConfig;
   return {
@@ -85,14 +88,21 @@ function jobFor(outputIndex: number, error: QueueJob['error'] = null): QueueJob 
 }
 
 // Runs the image job of every output index and returns the rendered prompt each one sent to the image model.
-async function renderedPrompts(imageCount: number, creativePlan: CreativePlan | null, safeRetry = false, title = 'Linen Shirt'): Promise<string[]> {
+async function renderedPrompts(
+  imageCount: number,
+  creativePlan: CreativePlan | null,
+  safeRetry = false,
+  title = 'Linen Shirt',
+  logLines?: Record<string, unknown>[],
+): Promise<string[]> {
   const ctx = contextFor(imageCount, creativePlan, title);
+  const capture = captureLogger();
   const sent: string[] = [];
   const provider = {
     async generateImage(request: { parts: AiPart[] }) {
       const last = request.parts[request.parts.length - 1];
       sent.push(last?.kind === 'text' ? last.text : '');
-      return { ok: true as const, value: { bytes: bytes(1, 2, 3), mimeType: 'image/jpeg', responseId: null, modelVersion: null } };
+      return { ok: true as const, value: { bytes: GENERATED_JPEG, mimeType: 'image/jpeg', responseId: null, modelVersion: null } };
     },
   } as unknown as AiProvider;
 
@@ -107,7 +117,7 @@ async function renderedPrompts(imageCount: number, creativePlan: CreativePlan | 
     media: { storage: { persistOutput: async () => ({ id: 'media-1' }) } } as never,
     getConfig: () => defaultGenerationConfig,
     getPrompt: (name) => ({ name, text: promptTemplate(name), version: 'hash' }) as never,
-    logger: captureLogger().logger,
+    logger: capture.logger,
     fetchImpl: async () => new Response(bytes(255, 216, 255), { status: 200, headers: { 'content-type': 'image/jpeg' } }),
   });
   const handler = createImageHandler(runtime);
@@ -116,6 +126,7 @@ async function renderedPrompts(imageCount: number, creativePlan: CreativePlan | 
     const outcome = await handler.run(jobFor(index, blocked as QueueJob['error']), new AbortController().signal);
     expect(outcome.kind).toBe('succeeded');
   }
+  logLines?.push(...capture.lines);
   return sent;
 }
 
@@ -192,5 +203,22 @@ describe('child model and mannequin-only products', () => {
       expect(prompt).not.toContain(CHILD_MODEL_NOTE);
       expect(prompt).not.toContain(SAFE_IMAGE_NOTE);
     }
+  });
+});
+
+describe('what the model returned is logged', () => {
+  it('logs the format, the pixel size and the requested options of every generated image', async () => {
+    const lines: Record<string, unknown>[] = [];
+    await renderedPrompts(2, buildFakePlan({ imageCount: 2, videoCount: 0 }), false, 'Linen Shirt', lines);
+    const generated = lines.filter((line) => line.msg === 'image generated');
+    expect(generated).toHaveLength(2);
+    expect(generated[0]).toMatchObject({
+      mimeType: 'image/jpeg',
+      width: 864,
+      height: 1184,
+      bytes: GENERATED_JPEG.byteLength,
+      requestedSize: defaultGenerationConfig.image.imageSize,
+      requestedMimeType: defaultGenerationConfig.image.outputMimeType,
+    });
   });
 });

@@ -143,5 +143,6 @@ export {
   type PlannerPartsInput,
   type ReferenceVideoInput,
 } from './prompts';
+export { imageSizeOf, type ImageSize } from './image-info';
 export { buildPlanResponseSchema } from './schema';
 export { buildFakePlan } from './fake';
