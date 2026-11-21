@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultGenerationConfig, type BatchConfigSnapshot, type CreativePlan, type GenerationConfig } from '@rs/shared';
 import { BACK_VIEW_NOTE, CHILD_MODEL_NOTE, SAFE_IMAGE_NOTE, buildFakePlan, buildFallbackPlan, type AiPart, type AiProvider } from '../../src/modules/ai';
 import type { BatchItemContext } from '../../src/modules/batches';
@@ -11,6 +11,11 @@ import { bytes, captureLogger } from '../ai/helpers';
 // mandatory back-view note.
 
 const SHOP = 'demo.myshopify.com';
+
+// What the stub model returns (the bytes and the type it labels them with), and what was handed to storage.
+const PNG_HEADER = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0x07, 0x00, 0, 0, 0x09, 0x60, 8, 6, 0, 0, 0]);
+let modelReturns: { bytes: Uint8Array; mimeType: string } | null = null;
+const stored: Array<{ mimeType: string; filename: string }> = [];
 
 // The header of an 864x1184 progressive JPEG (the size the model in use returns today), enough for its size to be read.
 const GENERATED_JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc2, 0, 17, 8, 0x04, 0xa0, 0x03, 0x60, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xd9]);
@@ -102,7 +107,8 @@ async function renderedPrompts(
     async generateImage(request: { parts: AiPart[] }) {
       const last = request.parts[request.parts.length - 1];
       sent.push(last?.kind === 'text' ? last.text : '');
-      return { ok: true as const, value: { bytes: GENERATED_JPEG, mimeType: 'image/jpeg', responseId: null, modelVersion: null } };
+      const returned = modelReturns ?? { bytes: GENERATED_JPEG, mimeType: 'image/jpeg' };
+      return { ok: true as const, value: { ...returned, responseId: null, modelVersion: null } };
     },
   } as unknown as AiProvider;
 
@@ -114,7 +120,14 @@ async function renderedPrompts(
       markItemPlanning: async () => undefined,
       setCreativePlan: async (_shopId, _itemId, plan, source) => ({ plan, source }),
     },
-    media: { storage: { persistOutput: async () => ({ id: 'media-1' }) } } as never,
+    media: {
+      storage: {
+        persistOutput: async (input: { mimeType: string; filename: string }) => {
+          stored.push({ mimeType: input.mimeType, filename: input.filename });
+          return { id: 'media-1' };
+        },
+      },
+    } as never,
     getConfig: () => defaultGenerationConfig,
     getPrompt: (name) => ({ name, text: promptTemplate(name), version: 'hash' }) as never,
     logger: capture.logger,
@@ -220,5 +233,42 @@ describe('what the model returned is logged', () => {
       requestedSize: defaultGenerationConfig.image.imageSize,
       requestedMimeType: defaultGenerationConfig.image.outputMimeType,
     });
+  });
+});
+
+describe('the stored type follows the bytes, not the label', () => {
+  beforeEach(() => {
+    stored.length = 0;
+  });
+
+  afterEach(() => {
+    modelReturns = null;
+    stored.length = 0;
+  });
+
+  it('stores a JPEG that the model labeled image/png as a .jpg, and says so in the log', async () => {
+    modelReturns = { bytes: GENERATED_JPEG, mimeType: 'image/png' };
+    const lines: Record<string, unknown>[] = [];
+    await renderedPrompts(1, buildFakePlan({ imageCount: 1, videoCount: 0 }), false, 'Linen Shirt', lines);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.mimeType).toBe('image/jpeg');
+    expect(stored[0]?.filename.endsWith('.jpg')).toBe(true);
+    expect(lines.some((line) => line.msg === 'the model labeled the image with the wrong type: storing it under its real type')).toBe(true);
+    expect(lines.find((line) => line.msg === 'image generated')).toMatchObject({ mimeType: 'image/jpeg', declaredMimeType: 'image/png', width: 864, height: 1184 });
+  });
+
+  it('stores a real PNG as a .png, and keeps the type of bytes it cannot identify', async () => {
+    modelReturns = { bytes: PNG_HEADER, mimeType: 'image/png' };
+    const lines: Record<string, unknown>[] = [];
+    await renderedPrompts(1, buildFakePlan({ imageCount: 1, videoCount: 0 }), false, 'Linen Shirt', lines);
+    expect(stored[0]?.mimeType).toBe('image/png');
+    expect(stored[0]?.filename.endsWith('.png')).toBe(true);
+    expect(lines.some((line) => String(line.msg).includes('wrong type'))).toBe(false);
+
+    stored.length = 0;
+    modelReturns = { bytes: Uint8Array.from([1, 2, 3, 4]), mimeType: 'image/webp' };
+    await renderedPrompts(1, buildFakePlan({ imageCount: 1, videoCount: 0 }));
+    expect(stored[0]?.mimeType).toBe('image/webp');
+    expect(stored[0]?.filename.endsWith('.webp')).toBe(true);
   });
 });

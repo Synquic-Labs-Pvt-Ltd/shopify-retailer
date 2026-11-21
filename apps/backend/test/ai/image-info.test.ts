@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { imageSizeOf } from '../../src/modules/ai/image-info';
+import { MIME_OF_FORMAT, imageFormatOf, imageSizeOf } from '../../src/modules/ai/image-info';
 
 const be16 = (value: number): number[] => [(value >> 8) & 0xff, value & 0xff];
 const be32 = (value: number): number[] => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
@@ -35,5 +35,21 @@ describe('imageSizeOf', () => {
     expect(imageSizeOf(jpeg(10, 10).subarray(0, 12))).toBeNull();
     expect(imageSizeOf(png(0, 100))).toBeNull();
     expect(imageSizeOf(Uint8Array.from([0xff, 0xd8, 0xff, 0xc4, 0, 0, 0, 0]))).toBeNull();
+  });
+});
+
+describe('imageFormatOf', () => {
+  it('tells PNG and JPEG apart by their first bytes, whatever the file is called', () => {
+    expect(imageFormatOf(png(10, 10))).toBe('png');
+    expect(imageFormatOf(jpeg(10, 10))).toBe('jpeg');
+    expect(imageFormatOf(jpeg(10, 10, 0xc0))).toBe('jpeg');
+    expect(MIME_OF_FORMAT).toEqual({ png: 'image/png', jpeg: 'image/jpeg' });
+  });
+
+  it('is unknown for anything else, including a file that is too short to tell', () => {
+    expect(imageFormatOf(new Uint8Array())).toBeNull();
+    expect(imageFormatOf(Uint8Array.from([0xff, 0xd8]))).toBeNull();
+    expect(imageFormatOf(png(10, 10).subarray(0, 7))).toBeNull();
+    expect(imageFormatOf(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0]))).toBeNull(); // WebP
   });
 });

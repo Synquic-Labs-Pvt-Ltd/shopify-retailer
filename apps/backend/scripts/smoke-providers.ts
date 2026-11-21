@@ -28,7 +28,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleAuth } from 'google-auth-library';
 import { JPEG_QUALITY } from '../src/modules/ai/gemini-content';
-import { imageSizeOf } from '../src/modules/ai/image-info';
+import { imageFormatOf, imageSizeOf } from '../src/modules/ai/image-info';
 
 type Provider = 'vertex' | 'aistudio';
 type Target = 'planner' | 'image' | 'video';
@@ -202,14 +202,17 @@ async function smokeImage(b: Backend, cfg: SmokeConfig, provider: Provider): Pro
     return { target: 'image', model, ok: false, detail: `HTTP 200 but no image part (finishReason=${parts?.finishReason ?? '?'})` };
   }
   const data = Buffer.from(img.inlineData.data, 'base64');
-  const size = imageSizeOf(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  const raw = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  const size = imageSizeOf(raw);
   const pixels = size === null ? 'size unknown' : `${size.width}x${size.height} px`;
+  // The label and the bytes can disagree (a JPEG has been seen under an image/png label): print both.
+  const actual = imageFormatOf(raw) ?? 'unknown format';
   const requested = imageConfig.imageSize === undefined ? 'no size requested' : `requested ${String(imageConfig.imageSize)}`;
   return {
     target: 'image',
     model,
     ok: true,
-    detail: `image ok: ${img.inlineData.mimeType ?? '?'}, ${pixels}, ${(data.byteLength / 1024 / 1024).toFixed(2)} MB (${requested}; ${sent})`,
+    detail: `image ok: labeled ${img.inlineData.mimeType ?? '?'}, bytes are ${actual}, ${pixels}, ${(data.byteLength / 1024 / 1024).toFixed(2)} MB (${requested}; ${sent})`,
   };
 }
 

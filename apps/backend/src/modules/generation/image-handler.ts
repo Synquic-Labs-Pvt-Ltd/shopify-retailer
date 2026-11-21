@@ -1,5 +1,5 @@
 import { backImageShotIndex } from '@rs/shared';
-import { buildImageParts, imageInputBudget, imageSizeOf, isMannequinOnlyProduct, renderImagePrompt } from '../ai';
+import { buildImageParts, imageFormatOf, imageInputBudget, imageSizeOf, isMannequinOnlyProduct, MIME_OF_FORMAT, renderImagePrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
 import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
@@ -68,13 +68,23 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       outputMimeType: ctx.config.image.outputMimeType,
     });
     if (!generated.ok) return outcomeFromGenerationError(generated.error, job, audit);
-    // What the model really returned: the quality a merchant gets is the size and format of this file.
+    // What the model really returned: the quality a merchant gets is the size and format of this file. The type is read
+    // from the bytes, not from the model's label (a JPEG has come back labeled image/png, which named the file .png).
     const size = imageSizeOf(generated.value.bytes);
+    const format = imageFormatOf(generated.value.bytes);
+    const mimeType = format === null ? generated.value.mimeType : MIME_OF_FORMAT[format];
+    if (mimeType !== generated.value.mimeType) {
+      rt.logger.warn(
+        { jobId: job.id, model: ctx.config.models.image, declaredMimeType: generated.value.mimeType, actualMimeType: mimeType },
+        'the model labeled the image with the wrong type: storing it under its real type',
+      );
+    }
     rt.logger.info(
       {
         jobId: job.id,
         model: ctx.config.models.image,
-        mimeType: generated.value.mimeType,
+        mimeType,
+        declaredMimeType: generated.value.mimeType,
         bytes: generated.value.bytes.byteLength,
         width: size?.width ?? null,
         height: size?.height ?? null,
@@ -88,7 +98,7 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
       job,
       ctx,
       kind: 'image',
-      mimeType: generated.value.mimeType,
+      mimeType,
       bytes: generated.value.bytes,
       shotTitle: shot.title,
       prompts: outputPrompts(ctx.config, planSource, 'image'),

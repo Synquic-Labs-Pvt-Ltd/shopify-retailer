@@ -47,6 +47,18 @@ function jpegSize(bytes: Uint8Array): ImageSize | null {
   return null;
 }
 
+export type ImageFormat = 'png' | 'jpeg';
+
+// The real format of the bytes, from their first bytes. The label a model puts on an image is not trusted for this:
+// a JPEG has been seen under a PNG label.
+export function imageFormatOf(bytes: Uint8Array): ImageFormat | null {
+  if (bytes.length >= 8 && PNG_SIGNATURE.every((value, index) => bytes[index] === value)) return 'png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg';
+  return null;
+}
+
+export const MIME_OF_FORMAT: Record<ImageFormat, string> = { png: 'image/png', jpeg: 'image/jpeg' };
+
 export function imageSizeOf(bytes: Uint8Array): ImageSize | null {
   return pngSize(bytes) ?? jpegSize(bytes);
 }
