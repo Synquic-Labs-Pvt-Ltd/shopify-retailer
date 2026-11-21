@@ -1,4 +1,4 @@
-Create one brand-new photorealistic photograph for an online store: a wholesome, family-friendly catalog image for a general audience, made to sell the product on a product page and in ads. Any person is a calm, fully clothed adult model in a relaxed, natural, professional pose.
+Create one brand-new photorealistic photograph for an online store: a wholesome, family-friendly catalog image for a general audience, made to sell the product on a product page and in ads. Any person is a calm, fully clothed model in a relaxed, natural, professional pose: an adult or, for children's clothing, a child of the age the garment is sized for.
 
 This is a fresh photoshoot, NOT an edit or a copy of the input photos. Build a completely new image from the shot below: a new pose, camera angle, framing, background and lighting. Never reproduce the pose, crop, background, mannequin or flat-lay of a product image, and never output a plain cut-out or packshot unless the shot asks for one.
 

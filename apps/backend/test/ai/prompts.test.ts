@@ -3,6 +3,7 @@ import { backImageShotIndex, createCreativePlanSchema, defaultGenerationConfig, 
 import { DEFAULT_PROMPTS_DIR, readPromptFile } from '../../src/core/config';
 import {
   BACK_VIEW_NOTE,
+  CHILD_MODEL_NOTE,
   FOCUS_NOTE_IMAGE,
   FOCUS_NOTE_VIDEO,
   PRODUCT_IMAGES_NOTE,
@@ -19,6 +20,7 @@ import {
   buildPlannerParts,
   deBlur,
   imageInputBudget,
+  isMannequinOnlyProduct,
   renderImagePrompt,
   renderPlannerSystemPrompt,
   renderPrompt,
@@ -336,8 +338,90 @@ describe('safer presentation after a safety block', () => {
     const rendered = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 2, videoCount: 1 }, config);
     expect(rendered).toContain('wholesome, family-friendly');
     expect(rendered).toContain('Never use suggestive or charged words');
-    expect(rendered).toContain('children\'s, infant\'s or school clothing, swimwear, underwear, sleepwear or lingerie');
     expect(rendered).toContain('write "none" in people');
+  });
+
+  it('shows children\'s everyday wear on a child model and keeps intimate wear on mannequins', () => {
+    const rendered = renderPlannerSystemPrompt(plannerTemplate, { imageCount: 2, videoCount: 1 }, config);
+    // Children's kurta, lehenga, jeans and the like: a child model in the image shots, never a blanket no-person rule.
+    expect(rendered).toContain('is shown on one child model in the image shots');
+    expect(rendered).toContain('different child from any child in the product images');
+    expect(rendered).toContain('kurta, lehenga, sharara');
+    expect(rendered).not.toContain('children\'s, infant\'s or school clothing');
+    expect(rendered).not.toContain('or if the product images show a child, show no person');
+    // Videos of children's products stay without a person (the video model renders adults only).
+    expect(rendered).toContain('In the video shots of a children\'s product show no person');
+    // Intimate wear, swimwear, sleepwear and infant garments: mannequin, hanger or flat lay, in every shot.
+    expect(rendered).toContain('Mannequin only. If the product is underwear, innerwear, swimwear, sleepwear or nightwear, lingerie, a diaper');
+    expect(rendered).toContain('show no person at all in any shot, image or video');
+    expect(rendered).toContain('If you are unsure whether a product belongs here, treat it as mannequin only');
+    // The age wording for a child model is spelled out; the old ban on every age word is gone for it.
+    expect(rendered).toContain('"child model, about 6 to 8 years old"');
+  });
+});
+
+describe('child model and mannequin-only products', () => {
+  const adultShot = { ...plan.imageShots[0]!, people: 'adult model' };
+  const childShot = { ...plan.imageShots[0]!, people: 'child model, about 6 to 8 years old' };
+
+  it('adds the child-model note only to a shot that plans a child model', () => {
+    const child = renderImagePrompt(imageTemplate, plan, childShot, config);
+    const adult = renderImagePrompt(imageTemplate, plan, adultShot, config);
+    const none = renderImagePrompt(imageTemplate, plan, { ...adultShot, people: 'none' }, config);
+    expect(child).toContain(CHILD_MODEL_NOTE);
+    expect(child.indexOf(CHILD_MODEL_NOTE)).toBeLessThan(child.indexOf(FOCUS_NOTE_IMAGE));
+    expect(adult).not.toContain(CHILD_MODEL_NOTE);
+    expect(none).not.toContain(CHILD_MODEL_NOTE);
+    expect(CHILD_MODEL_NOTE).toContain('a different child from any child in the PRODUCT IMAGES');
+  });
+
+  it('drops the child model completely in the no-person presentation', () => {
+    const safe = renderImagePrompt(imageTemplate, plan, childShot, config, { safe: true });
+    expect(safe).not.toContain(CHILD_MODEL_NOTE);
+    expect(safe).toContain(`People: ${SAFE_PEOPLE}`);
+    expect(safe).not.toContain('child model, about 6 to 8 years old');
+    expect(safe.endsWith(SAFE_IMAGE_NOTE)).toBe(true);
+  });
+
+  const product = (title: string, extra: Partial<ProductSnapshot> = {}): ProductSnapshot => ({ ...snapshot, title, productType: '', tags: [], ...extra });
+
+  it.each([
+    'Girls Floral Swimsuit',
+    'Boys Swim Trunks',
+    'Kids Cotton Underwear Pack of 3',
+    'Girls Cotton Briefs',
+    'Training Bra',
+    'Printed Night Suit Set',
+    'Cotton Nightwear',
+    'Kids Sleepwear Set',
+    'Newborn Gift Set',
+    'Infant Cotton Onesie',
+    'Disposable Diaper',
+  ])('keeps %s on a mannequin', (title) => {
+    expect(isMannequinOnlyProduct(product(title))).toBe(true);
+  });
+
+  it('reads the product type and tags too', () => {
+    expect(isMannequinOnlyProduct(product('Pastel Set', { productType: 'Swimwear' }))).toBe(true);
+    expect(isMannequinOnlyProduct(product('Pastel Set', { tags: ['girls', 'Lingerie'] }))).toBe(true);
+  });
+
+  it.each([
+    'Pink Velvet Dress',
+    'Black Velvet Offwhite Embroidery Gown for Girls',
+    'Blue Printed Kurti Sharara',
+    'Embroidered Lehenga Choli',
+    'Denim Jeans Top Set',
+    'Cotton Kurta Pajama Set',
+    'Boys Sherwani Set',
+    'Swiss Dot Frock',
+    'School Uniform Shirt',
+  ])('puts %s on a model, not a mannequin', (title) => {
+    expect(isMannequinOnlyProduct(product(title))).toBe(false);
+  });
+
+  it('ignores a swimwear mention that is only in the description', () => {
+    expect(isMannequinOnlyProduct(product('Linen Kurta', { descriptionText: 'Not swimwear. Pairs with any underwear.' }))).toBe(false);
   });
 });
 

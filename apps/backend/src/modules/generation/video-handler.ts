@@ -1,5 +1,5 @@
 import type { ClassifiedError, VideoSubmitRequest } from '../ai';
-import { renderVideoPrompt } from '../ai';
+import { isMannequinOnlyProduct, renderVideoPrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
 import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
@@ -50,7 +50,7 @@ async function runVideo(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   if (productSources.length === 0) return NO_PRODUCT_IMAGES;
 
   const template = await rt.resolvePrompt(ctx.shopId, 'video.user', promptRefOf(ctx.config, 'video'));
-  const prompt = renderVideoPrompt(template.text, plan, shot, { safe: isSafeAttempt(job) });
+  const prompt = renderVideoPrompt(template.text, plan, shot, { safe: isSafeAttempt(job) || isMannequinOnlyProduct(ctx.productSnapshot) });
   const audit = promptAudit(template, prompt);
   const video = ctx.config.video;
 

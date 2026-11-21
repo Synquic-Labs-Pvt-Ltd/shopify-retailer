@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultGenerationConfig, type BatchConfigSnapshot, type CreativePlan, type GenerationConfig } from '@rs/shared';
-import { BACK_VIEW_NOTE, buildFakePlan, buildFallbackPlan, type AiPart, type AiProvider } from '../../src/modules/ai';
+import { BACK_VIEW_NOTE, CHILD_MODEL_NOTE, SAFE_IMAGE_NOTE, buildFakePlan, buildFallbackPlan, type AiPart, type AiProvider } from '../../src/modules/ai';
 import type { BatchItemContext } from '../../src/modules/batches';
 import { createImageHandler } from '../../src/modules/generation/image-handler';
 import { createRuntime } from '../../src/modules/generation/runtime';
@@ -26,7 +26,7 @@ function snapshotFor(imageCount: number): BatchConfigSnapshot {
   };
 }
 
-function contextFor(imageCount: number, creativePlan: CreativePlan | null): BatchItemContext {
+function contextFor(imageCount: number, creativePlan: CreativePlan | null, title = 'Linen Shirt'): BatchItemContext {
   return {
     shopId: SHOP,
     createdByUserId: 'user-1',
@@ -34,7 +34,7 @@ function contextFor(imageCount: number, creativePlan: CreativePlan | null): Batc
     itemId: 'item-1',
     productGid: 'gid://shopify/Product/1',
     productSnapshot: {
-      title: 'Linen Shirt',
+      title,
       handle: 'linen-shirt',
       descriptionText: 'A relaxed linen shirt.',
       productType: 'shirt',
@@ -85,8 +85,8 @@ function jobFor(outputIndex: number, error: QueueJob['error'] = null): QueueJob 
 }
 
 // Runs the image job of every output index and returns the rendered prompt each one sent to the image model.
-async function renderedPrompts(imageCount: number, creativePlan: CreativePlan | null, safeRetry = false): Promise<string[]> {
-  const ctx = contextFor(imageCount, creativePlan);
+async function renderedPrompts(imageCount: number, creativePlan: CreativePlan | null, safeRetry = false, title = 'Linen Shirt'): Promise<string[]> {
+  const ctx = contextFor(imageCount, creativePlan, title);
   const sent: string[] = [];
   const provider = {
     async generateImage(request: { parts: AiPart[] }) {
@@ -158,5 +158,39 @@ describe('back-view image per product', () => {
     expect(prompts[0]).not.toContain('seen from behind');
     expect(prompts[0]).toContain('displayed as the hero');
     expect(buildFallbackPlan(contextFor(3, null).productSnapshot, { imageCount: 3, videoCount: 0 }, defaultGenerationConfig).imageShots[2]?.title).toBe('Back view');
+  });
+});
+
+// Who appears in a shot: a child model for children's everyday wear, a mannequin for intimate wear and swimwear.
+describe('child model and mannequin-only products', () => {
+  const planWithPeople = (people: string): CreativePlan => {
+    const base = buildFakePlan({ imageCount: 3, videoCount: 0 });
+    return { ...base, imageShots: base.imageShots.map((shot) => ({ ...shot, people })) };
+  };
+
+  it("renders a child model's shots normally for a kids' dress", async () => {
+    const prompts = await renderedPrompts(3, planWithPeople('child model, about 6 to 8 years old'), false, 'Pink Velvet Dress');
+    for (const prompt of prompts) {
+      expect(prompt).toContain(CHILD_MODEL_NOTE);
+      expect(prompt).not.toContain(SAFE_IMAGE_NOTE);
+    }
+  });
+
+  it('shows swimwear on no person from the very first attempt, whatever the plan says', async () => {
+    // The plan wrongly asks for a child model; the product data wins.
+    const prompts = await renderedPrompts(3, planWithPeople('child model, about 6 to 8 years old'), false, 'Girls Floral Swimsuit');
+    for (const prompt of prompts) {
+      expect(prompt.endsWith(SAFE_IMAGE_NOTE)).toBe(true);
+      expect(prompt).not.toContain(CHILD_MODEL_NOTE);
+    }
+    expect(prompts[2]).toContain(BACK_VIEW_NOTE);
+  });
+
+  it('keeps an adult-model shot untouched for an ordinary product', async () => {
+    const prompts = await renderedPrompts(2, planWithPeople('adult model'), false, 'Linen Shirt');
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain(CHILD_MODEL_NOTE);
+      expect(prompt).not.toContain(SAFE_IMAGE_NOTE);
+    }
   });
 });

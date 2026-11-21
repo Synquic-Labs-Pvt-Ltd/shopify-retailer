@@ -202,10 +202,30 @@ export const SAFE_IMAGE_NOTE =
 export const SAFE_VIDEO_NOTE =
   'Presentation for this version: no person appears. The garment hangs on a plain wooden hanger or sits on a headless mannequin form while the camera moves slowly and smoothly around it, and the fabric stays almost still. A calm, wholesome commercial for a general audience.';
 
+// Added to every image shot whose `people` field names a child model (children's everyday wear). Code, not editable
+// prompt text, so a store's own image prompt version cannot lose it: the child is a new child (never a likeness of the
+// children in the merchant's product photos) and is shown calmly, fully clothed and head to toe.
+export const CHILD_MODEL_NOTE =
+  'Child model: the person is a child of the age the garment is sized for, a different child from any child in the PRODUCT IMAGES, with their own face; never reproduce the face or likeness of a child shown in the product photos. The child is calm and fully clothed in exactly the product outfit, standing or walking, framed head to toe or three-quarter in an ordinary, clean, wholesome setting, with a neutral or gently smiling expression: an ordinary catalog photograph for a general audience.';
+
+const CHILD_PERSON = /\bchild\b/i;
+
+// Products that never appear on a person, whatever the plan says: intimate wear, swimwear, sleepwear, diapers and
+// infant garments. The planner prompt says the same, but it is a model's judgement and a store can edit the text, so
+// the product data decides here as well (title, type and tags only: a description may mention swimwear in passing).
+// A false match costs one mannequin image; a miss would put a person in underwear, so the list errs wide. Pajama and
+// pyjama are left out on purpose: a kurta pajama is everyday wear, and real sleepwear is caught by the other words.
+const MANNEQUIN_ONLY =
+  /\b(?:under(?:wear|garments?|shirts?|pants)|innerwear|briefs?|boxers?|panty|panties|bras?|bralettes?|lingerie|swim\w*|bikinis?|tankinis?|beachwear|night[\s-]?(?:wear|suits?|dress(?:es)?|gowns?|ie)|sleep[\s-]?(?:wear|suits?)|diapers?|nappy|nappies|newborns?|infants?|onesies?|babygrows?)\b/i;
+
+export function isMannequinOnlyProduct(snapshot: ProductSnapshot): boolean {
+  return MANNEQUIN_ONLY.test([snapshot.title, snapshot.productType, ...snapshot.tags].join(' | '));
+}
+
 // Added when the image model receives a style reference: rebuild that photograph's scene and put the product outfit
 // in it. Without this the model treats the references as loose inspiration and falls back to the product photo.
 export const SCENE_REFERENCE_NOTE =
-  'Scene brief: take the outfit from the PRODUCT IMAGES and place it on a model inside the scene of STYLE REFERENCE 1. Rebuild that scene: the same kind of backdrop (color, texture, floor), the same kinds of props and how they are arranged, the same lighting direction and quality, color palette, camera distance and framing, and the same mood. The outfit appears exactly as shown in the PRODUCT IMAGES. The person in the style reference only stands in for the pose and framing: use a different adult model with their own face, and replace every garment, shoe and accessory they wear with the product outfit. Logos, brand names and readable text from the style reference stay out of the image.';
+  'Scene brief: take the outfit from the PRODUCT IMAGES and place it on a model inside the scene of STYLE REFERENCE 1. Rebuild that scene: the same kind of backdrop (color, texture, floor), the same kinds of props and how they are arranged, the same lighting direction and quality, color palette, camera distance and framing, and the same mood. The outfit appears exactly as shown in the PRODUCT IMAGES. The person in the style reference only stands in for the pose and framing: use a different model with their own face (a child of the age the garment is sized for when the shot calls for a child model, otherwise an adult), and replace every garment, shoe and accessory they wear with the product outfit. Logos, brand names and readable text from the style reference stay out of the image.';
 
 // Added to the last image shot of every product, whatever the planner wrote and whichever prompt version rendered it
 // (merchant request: every product gets one back image). It overrides front-facing wording in the shot and works for
@@ -270,6 +290,7 @@ export function renderImagePrompt(
   const notes = [
     options.scene === true && options.safe !== true ? SCENE_REFERENCE_NOTE : null,
     options.back === true ? BACK_VIEW_NOTE : null,
+    options.safe !== true && CHILD_PERSON.test(shot.people) ? CHILD_MODEL_NOTE : null,
     FOCUS_NOTE_IMAGE,
     options.safe === true ? SAFE_IMAGE_NOTE : null,
   ];

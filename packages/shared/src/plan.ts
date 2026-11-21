@@ -21,7 +21,7 @@ const DESCRIPTIONS = {
   camera:
     'Shot type, angle, lens and framing, for example "full-length, eye-level, 50mm lens, the whole outfit in frame". Everything is in deep focus.',
   lighting: 'Direction, quality and time of day of the light, for example "soft window light from the left, late morning".',
-  people: 'The word none, or one adult model in a calm, natural pose.',
+  people: 'The word none, or one model in a calm, natural pose: "adult model", or "child model, about N to M years old" for children\'s everyday wear.',
   cameraMove:
     'One real camera move: locked-off tripod, slow pan, slow tilt, dolly in, tracking, arc, or subtle handheld. Chosen before the prompt is written.',
   subjectAction: 'One small, physically real action of the subject or the fabric, or the word none.',

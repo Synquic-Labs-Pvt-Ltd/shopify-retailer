@@ -1,5 +1,5 @@
 import { backImageShotIndex } from '@rs/shared';
-import { buildImageParts, imageInputBudget, renderImagePrompt } from '../ai';
+import { buildImageParts, imageInputBudget, isMannequinOnlyProduct, renderImagePrompt } from '../ai';
 import type { JobHandler, JobOutcome, QueueJob } from '../queue';
 import { failure, isSafeAttempt, outcomeFromGenerationError } from './outcomes';
 import {
@@ -35,6 +35,9 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   if (allProducts.length === 0) return NO_PRODUCT_IMAGES;
 
   const safe = isSafeAttempt(job);
+  // Intimate wear, swimwear and infant garments never show a person: they get the no-person presentation on the first
+  // attempt too. Only a safety block also drops the style references (nothing blocked these).
+  const noPerson = safe || isMannequinOnlyProduct(ctx.productSnapshot);
   // The safer retry leaves the style references out: they may show the people the filter objected to.
   const allStyles = safe ? [] : referenceSources(splitReferences(ctx).style, 'image');
   // The model takes few images and uses the later ones unreliably: the style reference keeps its place and the
@@ -46,7 +49,7 @@ async function runImage(rt: Runtime, job: QueueJob, signal: AbortSignal): Promis
   const template = await rt.resolvePrompt(ctx.shopId, 'image.user', promptRefOf(ctx.config, 'image'));
   // The last image shot of every product is its back view, whatever the plan or the prompt version says.
   const back = outputIndex === backImageShotIndex(plan.imageShots.length);
-  const prompt = renderImagePrompt(template.text, plan, shot, config, { safe, scene: styleSources.length > 0, back });
+  const prompt = renderImagePrompt(template.text, plan, shot, config, { safe: noPerson, scene: styleSources.length > 0, back });
   const audit = promptAudit(template, prompt);
 
   try {
