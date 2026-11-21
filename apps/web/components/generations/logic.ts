@@ -18,7 +18,7 @@ import { usableOutputs, type ResultTileModel, type UsableOutput } from '@/lib/ba
 import { archiveFileName, planArchive, type ArchiveFile, type ArchiveGroup } from '@/lib/archive';
 import { sanitizeFilename } from '@/lib/download-policy';
 import type { DownloadItem, DownloadOutcome, ZipDownloadResult } from '@/lib/download';
-import { isJpegName, jpegFilename, type DownloadQuality } from '@/lib/download-quality';
+import { isJpegName, jpegFilename, originalImageUrl, type DownloadQuality } from '@/lib/download-quality';
 
 // Pure rules of the Generations pages: list filter, labels, file names, viewer navigation and toast texts.
 
@@ -201,7 +201,10 @@ function standardJpegName(filename: string, media: UsableOutput, quality: Downlo
 export function downloadItemOf(productTitle: string, media: UsableOutput, index: number, quality: DownloadQuality): DownloadItem {
   const filename = outputFilename(productTitle, media, index);
   const jpegName = standardJpegName(filename, media, quality);
-  return { url: media.url, filename, ...(jpegName === undefined ? {} : { jpegFilename: jpegName }) };
+  // At original quality an image is fetched in the format it was stored in (see originalImageUrl); standard quality
+  // takes what the CDN serves by default, which for a PNG is already a web JPEG.
+  const url = quality === 'original' && media.mediaType === 'image' ? originalImageUrl(media.url, filename) : media.url;
+  return { url, filename, ...(jpegName === undefined ? {} : { jpegFilename: jpegName }) };
 }
 
 // The outputs of a product, named like the single downloads, for the folder of that product in a zip.

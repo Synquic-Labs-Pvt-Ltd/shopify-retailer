@@ -29,6 +29,23 @@ export function isJpegName(filename: string): boolean {
   return JPEG_NAME.test(filename);
 }
 
+const PNG_NAME = /\.png$/i;
+
+// The URL that returns a stored PNG as a PNG. Shopify's image service answers a plain request for a PNG with a small JPEG
+// rendition of it (observed: 717 KB for a 6.95 MB, 1792x2400 PNG that Shopify's Files page lists as the PNG, a WebP for a
+// browser-style Accept header), so the file a merchant saved as "original" was that rendition. The format=png parameter
+// returns the PNG itself (6.95 MB, same size, valid PNG). Only a stored PNG gets it; any other file keeps its URL.
+export function originalImageUrl(url: string, filename: string): string {
+  if (!PNG_NAME.test(filename)) return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('format', 'png');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 // "shirt-front-1.png" -> "shirt-front-1.jpg". A name without an extension gets one.
 export function jpegFilename(filename: string): string {
   const dot = filename.lastIndexOf('.');

@@ -182,6 +182,25 @@ describe('downloadFile as a standard JPEG', () => {
   });
 });
 
+describe('a JPEG that arrives is not converted again', () => {
+  const jpegResponse = (): Response => new Response(new Blob(['CDN-JPEG'], { type: 'image/jpeg' }), { status: 200 });
+
+  it('saves the web JPEG the CDN sent for a PNG as it is, under the JPEG name', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jpegResponse()));
+    const convert = vi.fn(async () => new Blob(['RE-ENCODED'], { type: 'image/jpeg' }));
+    expect(await downloadFile(URL_A, 'shirt-1.png', { jpegFilename: 'shirt-1.jpg', convert })).toBe('saved');
+    expect(convert).not.toHaveBeenCalled();
+    expect(anchors[0]?.download).toBe('shirt-1.jpg');
+  });
+
+  it('still converts a PNG that arrives as a PNG', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(new Blob(['RAW-PNG'], { type: 'image/png' }), { status: 200 })));
+    const convert = vi.fn(async () => new Blob(['CONVERTED'], { type: 'image/jpeg' }));
+    expect(await downloadFile(URL_A, 'shirt-1.png', { jpegFilename: 'shirt-1.jpg', convert })).toBe('saved');
+    expect(convert).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('downloadZip', () => {
   const FILES: ArchiveFile[] = [
     { url: URL_A, path: 'Lamp/lamp-1.jpg' },
@@ -416,5 +435,36 @@ describe('downloadZip with standard JPEGs', () => {
     await downloadZip(originals, 'a.zip', { convert });
     expect(convert).not.toHaveBeenCalled();
     expect(await texts()).toEqual(['PNG-A']);
+  });
+});
+
+describe('downloadZip when the CDN already sends a JPEG', () => {
+  let saved: Blob[];
+
+  beforeEach(() => {
+    saved = [];
+    const create = URL.createObjectURL.bind(URL);
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((object) => {
+      saved.push(object as Blob);
+      return create(object);
+    });
+  });
+
+  it('keeps the JPEG as sent under the .jpg path and converts only what arrives as something else', async () => {
+    const bodies: Record<string, Blob> = {
+      [URL_A]: new Blob(['CDN-JPEG'], { type: 'image/jpeg' }),
+      [URL_B]: new Blob(['RAW-PNG'], { type: 'image/png' }),
+    };
+    fetchMock.mockImplementation((input) => Promise.resolve(new Response(bodies[String(input)] ?? new Blob(['?']), { status: 200 })));
+    const convert = vi.fn(async () => new Blob(['CONVERTED'], { type: 'image/jpeg' }));
+    const files: ArchiveFile[] = [
+      { url: URL_A, path: 'Shirt/a.jpg', originalPath: 'Shirt/a.png' },
+      { url: URL_B, path: 'Shirt/b.jpg', originalPath: 'Shirt/b.png' },
+    ];
+    expect(await downloadZip(files, 'a.zip', { convert })).toMatchObject({ outcome: 'saved', added: 2 });
+    expect(convert).toHaveBeenCalledTimes(1);
+    const zip = await parseZip(saved[0] as Blob);
+    expect(zip.entries.map((entry) => entry.name)).toEqual(['Shirt/a.jpg', 'Shirt/b.jpg']);
+    expect(zip.entries.map((entry) => new TextDecoder().decode(entry.data))).toEqual(['CDN-JPEG', 'CONVERTED']);
   });
 });

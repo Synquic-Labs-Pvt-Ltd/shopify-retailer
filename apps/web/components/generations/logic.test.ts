@@ -380,8 +380,13 @@ describe('standard and original quality', () => {
   });
 
   it('never converts at original quality', () => {
-    expect(downloadItemOf('Shirt', png, 1, 'original')).toEqual({ url: png.url, filename: 'Shirt-Front-1.png' });
+    expect(downloadItemOf('Shirt', png, 1, 'original')).toEqual({ url: `${png.url}&format=png`, filename: 'Shirt-Front-1.png' });
     expect(downloadItemOf('Shirt', png, 1, 'original')).not.toHaveProperty('jpegFilename');
+    // Only the stored PNG asks for format=png; a JPEG and a video keep the plain url.
+    expect(downloadItemOf('Shirt', jpg, 2, 'original').url).toBe(jpg.url);
+    expect(downloadItemOf('Shirt', video, 3, 'original').url).toBe(video.url);
+    // Standard quality takes what the CDN serves by default, which for a PNG is already a web JPEG.
+    expect(downloadItemOf('Shirt', png, 1, 'standard').url).toBe(png.url);
   });
 
   it('plans a zip of standard JPEGs with the stored name kept for a failed conversion', () => {
@@ -392,7 +397,7 @@ describe('standard and original quality', () => {
       { url: video.url, path: 'Shirt/Shirt-video-3.mp4' },
     ]);
     expect(productArchiveFiles(product, 'original')).toEqual([
-      { url: png.url, path: 'Shirt/Shirt-Front-1.png' },
+      { url: `${png.url}&format=png`, path: 'Shirt/Shirt-Front-1.png' },
       { url: media(2).url, path: 'Shirt/Shirt-Back-2.jpg' },
       { url: video.url, path: 'Shirt/Shirt-video-3.mp4' },
     ]);

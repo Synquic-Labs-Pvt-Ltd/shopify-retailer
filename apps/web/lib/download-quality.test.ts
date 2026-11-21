@@ -5,6 +5,7 @@ import {
   convertToStandardJpeg,
   isJpegName,
   jpegFilename,
+  originalImageUrl,
   parseDownloadQuality,
 } from './download-quality';
 import type { ImageDecoder } from './references/prepareImage';
@@ -93,5 +94,28 @@ describe('convertToStandardJpeg', () => {
 
   it('has no browser to convert with in plain Node, which is the case where the caller keeps the original', async () => {
     await expect(convertToStandardJpeg(source)).rejects.toThrow();
+  });
+});
+
+describe('originalImageUrl', () => {
+  const CDN = 'https://cdn.shopify.com/s/files/1/0624/0701/6704/files/rs-lehenga-img2.png?v=1795255247';
+
+  it('asks for the PNG itself when the stored file is a PNG, keeping the version parameter', () => {
+    expect(originalImageUrl(CDN, 'Lehenga-Festive-2.png')).toBe(`${CDN}&format=png`);
+    expect(originalImageUrl(CDN, 'Lehenga-Festive-2.PNG')).toBe(`${CDN}&format=png`);
+  });
+
+  it('works for a URL without a query and does not stack the parameter', () => {
+    const bare = 'https://cdn.shopify.com/s/files/x/rs-img1.png';
+    expect(originalImageUrl(bare, 'a.png')).toBe(`${bare}?format=png`);
+    const once = originalImageUrl(CDN, 'a.png');
+    expect(originalImageUrl(once, 'a.png')).toBe(once);
+    expect(originalImageUrl('https://cdn.shopify.com/s/files/x/rs-img1.png?format=pjpg&v=1', 'a.png')).toBe('https://cdn.shopify.com/s/files/x/rs-img1.png?format=png&v=1');
+  });
+
+  it('leaves every other file alone: JPEGs, videos and URLs that cannot be read', () => {
+    expect(originalImageUrl('https://cdn.shopify.com/s/files/x/rs-img1.jpg?v=1', 'a.jpg')).toBe('https://cdn.shopify.com/s/files/x/rs-img1.jpg?v=1');
+    expect(originalImageUrl('https://cdn.shopify.com/s/files/x/clip.mp4?v=1', 'clip.mp4')).toBe('https://cdn.shopify.com/s/files/x/clip.mp4?v=1');
+    expect(originalImageUrl('not a url', 'a.png')).toBe('not a url');
   });
 });

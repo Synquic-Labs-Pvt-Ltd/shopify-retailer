@@ -99,6 +99,10 @@ export interface DownloadFileOptions {
   convert?: ImageConverter;
 }
 
+// A JPEG needs no conversion: the CDN already sends a PNG as a web JPEG, and re-encoding it would only lose quality (and
+// shrink it to the standard size limit) a second time. What counts is what arrived, not what the file is called.
+const isJpegBlob = (blob: Blob): boolean => blob.type === 'image/jpeg';
+
 // The blob and name to save: the standard JPEG when one was asked for and the conversion works, else the stored file.
 async function chooseSaved(
   blob: Blob,
@@ -107,6 +111,7 @@ async function chooseSaved(
   convert: ImageConverter,
 ): Promise<{ blob: Blob; name: string }> {
   if (jpegName === undefined) return { blob, name };
+  if (isJpegBlob(blob)) return { blob, name: jpegName };
   try {
     return { blob: await convert(blob), name: jpegName };
   } catch {
@@ -188,6 +193,7 @@ function saveZip(blob: Blob, filename: string): 'saved' | 'opened' | 'failed' {
 // convert it. Every other file is left as it is.
 async function chooseEntry(file: ArchiveFile, blob: Blob, convert: ImageConverter): Promise<{ path: string; blob: Blob }> {
   if (file.originalPath === undefined) return { path: file.path, blob };
+  if (isJpegBlob(blob)) return { path: file.path, blob };
   try {
     return { path: file.path, blob: await convert(blob) };
   } catch {
